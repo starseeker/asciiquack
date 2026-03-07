@@ -12,6 +12,7 @@
 #include "html5.hpp"
 #include "manpage.hpp"
 #include "parser.hpp"
+#include "pdf.hpp"
 #include "reader.hpp"
 #include "substitutors.hpp"
 
@@ -2385,6 +2386,495 @@ static void test_unclosed_block_warning() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PDF backend tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Check that @p pdf starts with the standard PDF header and ends with %%EOF.
+static bool is_valid_pdf_envelope(const std::string& pdf) {
+    if (pdf.compare(0, 7, "%PDF-1.") != 0) { return false; }
+    if (pdf.size() < 5)                    { return false; }
+    // Ends with "%%EOF\n" or "%%EOF"
+    return pdf.rfind("%%EOF") != std::string::npos;
+}
+
+/// Parse the xref table and verify that every object offset is correct.
+static bool pdf_xref_valid(const std::string& pdf) {
+    auto sxr_pos = pdf.rfind("startxref");
+    if (sxr_pos == std::string::npos) { return false; }
+
+    // Read xref byte offset
+    std::size_t xref_offset = 0;
+    {
+        auto after = pdf.find('\n', sxr_pos + 9);
+        if (after == std::string::npos) { return false; }
+        xref_offset = static_cast<std::size_t>(
+            std::stoul(pdf.substr(sxr_pos + 10, after - sxr_pos - 10)));
+    }
+
+    // Parse "xref\n0 N\n..." from xref_offset
+    const char* xref = pdf.c_str() + xref_offset;
+    if (std::string(xref, 4) != "xref") { return false; }
+
+    // Find "0 N" count
+    const char* p = xref + 5;  // skip "xref\n"
+    int n_objs = std::atoi(p + 2);  // skip "0 "
+    if (n_objs <= 0) { return false; }
+
+    // Advance past "0 N\n"
+    p = std::strchr(p, '\n');
+    if (!p) { return false; }
+    ++p;
+
+    // Validate each entry (skip obj 0 which is always free)
+    // Each entry is 20 bytes: "NNNNNNNNNN GGGGG x \n"
+    for (int i = 0; i < n_objs; ++i) {
+        if (i == 0) { p += 20; continue; }  // skip free entry
+
+        std::size_t obj_off = static_cast<std::size_t>(std::atol(p));
+        p += 20;
+
+        // At obj_off in the pdf, we expect "i 0 obj"
+        std::string expected = std::to_string(i) + " 0 obj";
+        if (pdf.compare(obj_off, expected.size(), expected) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void test_pdf_basic_structure() {
+    begin_test("pdf: basic document produces valid PDF structure");
+
+    const std::string src =
+        "= Hello PDF\n"
+        "Author Name\n"
+        "\n"
+        "A simple paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // PDF should contain the title text (rendered word-by-word)
+    EXPECT_CONTAINS(pdf, "Hello");
+    EXPECT_CONTAINS(pdf, "PDF");
+    // Should reference standard fonts
+    EXPECT_CONTAINS(pdf, "Helvetica");
+    EXPECT_CONTAINS(pdf, "Courier");
+
+    end_test();
+}
+
+static void test_pdf_a4_size() {
+    begin_test("pdf: A4 page size produces correct MediaBox");
+
+    const std::string src = "= Test\n\nParagraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf_a4     = asciiquack::convert_to_pdf(*doc, true);
+    std::string pdf_letter = asciiquack::convert_to_pdf(*doc, false);
+
+    // A4: 595 x 842
+    EXPECT_CONTAINS(pdf_a4, "595.00");
+    EXPECT_CONTAINS(pdf_a4, "842.00");
+    // Letter: 612 x 792
+    EXPECT_CONTAINS(pdf_letter, "612.00");
+    EXPECT_CONTAINS(pdf_letter, "792.00");
+
+    EXPECT(is_valid_pdf_envelope(pdf_a4));
+    EXPECT(is_valid_pdf_envelope(pdf_letter));
+    EXPECT(pdf_xref_valid(pdf_a4));
+    EXPECT(pdf_xref_valid(pdf_letter));
+
+    end_test();
+}
+
+static void test_pdf_sections() {
+    begin_test("pdf: section headings included in output");
+
+    const std::string src =
+        "= Document Title\n"
+        "\n"
+        "== Section One\n"
+        "\n"
+        "Some text.\n"
+        "\n"
+        "=== Subsection\n"
+        "\n"
+        "Sub text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Section headings rendered word-by-word
+    EXPECT_CONTAINS(pdf, "Section");
+    EXPECT_CONTAINS(pdf, "One");
+    EXPECT_CONTAINS(pdf, "Subsection");
+
+    end_test();
+}
+
+static void test_pdf_lists() {
+    begin_test("pdf: unordered and ordered lists rendered");
+
+    const std::string src =
+        "= Lists\n"
+        "\n"
+        "* Alpha\n"
+        "* Beta\n"
+        "\n"
+        ". First\n"
+        ". Second\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "Alpha");
+    EXPECT_CONTAINS(pdf, "Beta");
+    EXPECT_CONTAINS(pdf, "First");
+    EXPECT_CONTAINS(pdf, "Second");
+
+    end_test();
+}
+
+static void test_pdf_code_block() {
+    begin_test("pdf: listing block uses Courier font");
+
+    const std::string src =
+        "= Code\n"
+        "\n"
+        "----\n"
+        "int main() { return 0; }\n"
+        "----\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "int main");
+    // Courier should be used for code
+    EXPECT_CONTAINS(pdf, "/F5");  // F5 = Courier in our resource dict
+
+    end_test();
+}
+
+static void test_pdf_inline_markup() {
+    begin_test("pdf: inline bold/italic/mono uses correct font resources");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Text with *bold* and _italic_ and `mono` words.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "bold");
+    EXPECT_CONTAINS(pdf, "italic");
+    EXPECT_CONTAINS(pdf, "mono");
+    // F2=Helvetica-Bold, F3=Oblique, F5=Courier
+    EXPECT_CONTAINS(pdf, "/F2");
+    EXPECT_CONTAINS(pdf, "/F3");
+    EXPECT_CONTAINS(pdf, "/F5");
+
+    end_test();
+}
+
+static void test_pdf_admonition() {
+    begin_test("pdf: admonition block rendered with label");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "NOTE: Important information here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "NOTE");
+    EXPECT_CONTAINS(pdf, "Important");
+
+    end_test();
+}
+
+static void test_pdf_hrule() {
+    begin_test("pdf: thematic break emits a horizontal line");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Before.\n"
+        "\n"
+        "'''\n"
+        "\n"
+        "After.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "Before");
+    EXPECT_CONTAINS(pdf, "After");
+
+    end_test();
+}
+
+static void test_pdf_multipage() {
+    begin_test("pdf: long document produces multiple pages");
+
+    // Build a document with enough content to overflow one page
+    std::string src = "= Long Document\n\n";
+    for (int i = 1; i <= 40; ++i) {
+        src += "== Section " + std::to_string(i) + "\n\n"
+               "This is paragraph " + std::to_string(i) +
+               " with some text content to fill the page.\n\n";
+    }
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // A long document should produce more than one page (i.e. more than
+    // one content stream / page pair in the PDF)
+    std::size_t stream_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("stream\n", pos)) != std::string::npos) {
+        ++stream_count;
+        ++pos;
+    }
+    EXPECT(stream_count > 1);
+
+    end_test();
+}
+
+static void test_pdf_escape_special_chars() {
+    begin_test("pdf: text with parentheses and backslashes is escaped");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Text (with parens) and back\\slash.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // The parens should appear escaped in the content stream
+    EXPECT_CONTAINS(pdf, "\\(");
+    EXPECT_CONTAINS(pdf, "\\)");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TrueType font tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// System font path used for TrueType tests.  The Lato font is available on
+// the CI runner; this is a light dependency since Lato is bundled with many
+// Ubuntu/Debian installations.  If the path doesn't exist the test is skipped
+// rather than failed so the suite remains portable.
+static constexpr const char* LATO_REGULAR_PATH =
+    "/usr/share/fonts/truetype/lato/Lato-Regular.ttf";
+
+static void test_pdf_empty_font_path_fallback() {
+    begin_test("pdf: empty font path falls back to base-14 Helvetica");
+
+    const std::string src = "= Test\n\nA paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf_default = asciiquack::convert_to_pdf(*doc);
+    std::string pdf_empty   = asciiquack::convert_to_pdf(*doc, false, "");
+
+    EXPECT(is_valid_pdf_envelope(pdf_default));
+    EXPECT(is_valid_pdf_envelope(pdf_empty));
+    EXPECT(pdf_xref_valid(pdf_default));
+    EXPECT(pdf_xref_valid(pdf_empty));
+
+    // Both outputs should be structurally identical (same object count).
+    // Neither should embed a TrueType font.
+    EXPECT(pdf_default.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT(pdf_empty.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT_CONTAINS(pdf_empty, "Helvetica");
+
+    end_test();
+}
+
+static void test_pdf_invalid_font_path_fallback() {
+    begin_test("pdf: invalid font path falls back gracefully to Helvetica");
+
+    const std::string src = "= Test\n\nA paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    // Should not throw; should fall back to Helvetica silently.
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false,
+                                                  "/no/such/font/does/not/exist.ttf");
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // No TrueType embedding – fell back to base-14
+    EXPECT(pdf.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT_CONTAINS(pdf, "Helvetica");
+
+    end_test();
+}
+
+static void test_pdf_ttf_font_embedded() {
+    begin_test("pdf: valid TTF font path embeds TrueType font as F1");
+
+    // Skip if the system font is not present (keeps the suite portable)
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= Document\n\nBody text paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // A TrueType font must be present
+    EXPECT_CONTAINS(pdf, "/Subtype /TrueType");
+    // FontDescriptor and font data stream must be present
+    EXPECT_CONTAINS(pdf, "/FontDescriptor");
+    EXPECT_CONTAINS(pdf, "/FontFile2");
+    // Font name derived from filename stem
+    EXPECT_CONTAINS(pdf, "Lato-Regular");
+    // Widths array for characters 32–255
+    EXPECT_CONTAINS(pdf, "/Widths [");
+    EXPECT_CONTAINS(pdf, "/FirstChar 32");
+    EXPECT_CONTAINS(pdf, "/LastChar 255");
+    // Body text still contains the page content
+    EXPECT_CONTAINS(pdf, "Body");
+    // Courier still present for code/mono
+    EXPECT_CONTAINS(pdf, "Courier");
+
+    end_test();
+}
+
+static void test_pdf_ttf_object_layout() {
+    begin_test("pdf: with TTF font object IDs are 3=stream 4=descriptor 5=F1");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= T\n\nP.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Object 3 must be the font stream
+    EXPECT_CONTAINS(pdf, "3 0 obj\n<< /Length ");
+    EXPECT_CONTAINS(pdf, "/Length1 ");
+    // Object 4 must be FontDescriptor
+    EXPECT_CONTAINS(pdf, "4 0 obj\n<< /Type /FontDescriptor");
+    // Object 5 must be the TrueType font dict (F1)
+    EXPECT_CONTAINS(pdf, "5 0 obj\n<< /Type /Font\n   /Subtype /TrueType");
+    // F1 still maps to object 5 in the per-page resource dict
+    EXPECT_CONTAINS(pdf, "/F1 5 0 R");
+
+    end_test();
+}
+
+static void test_pdf_ttf_widths_differ_from_helvetica() {
+    begin_test("pdf: custom TTF produces different character widths from Helvetica");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    // Lato is a humanist sans-serif with different metrics from Helvetica.
+    // Load the font directly via TtfFont and check a few glyph widths.
+    auto font = minipdf::TtfFont::from_file(LATO_REGULAR_PATH);
+    EXPECT(font != nullptr);
+
+    // The Helvetica width for 'A' (codepoint 65) is 667/1000 em.
+    // Lato's 'A' should differ.
+    float lato_a_width = font->advance_1000('A');
+    EXPECT(lato_a_width > 0.0f);
+    // Helvetica value from the built-in table is 667; Lato will not be exactly 667
+    // (Lato is slightly narrower).  We just check it's in a sane range.
+    EXPECT(lato_a_width > 300.0f && lato_a_width < 900.0f);
+
+    // Verify metrics
+    EXPECT(font->ascent_1000()  > 500.0f);
+    EXPECT(font->descent_1000() < 0.0f);
+
+    end_test();
+}
+
+static void test_pdf_ttf_xref_still_valid_with_font() {
+    begin_test("pdf: xref table is correct when TrueType font is embedded");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    // Build a multi-section document to get multiple pages
+    std::string src = "= Long Doc\n\n";
+    for (int i = 0; i < 20; ++i) {
+        src += "== Section " + std::to_string(i + 1) + "\n\nParagraph text here.\n\n";
+    }
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Should have multiple pages
+    std::size_t stream_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("stream\n", pos)) != std::string::npos) {
+        ++stream_count;
+        ++pos;
+    }
+    // At least 2 streams: font data + ≥1 page content
+    EXPECT(stream_count >= 2);
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2546,6 +3036,25 @@ int main(int argc, char* argv[]) {
     test_docbook5_book_doctype();
     test_docbook5_table();
     test_docbook5_image();
+
+    // PDF backend
+    std::cout << "\nPDF backend tests:\n";
+    test_pdf_basic_structure();
+    test_pdf_a4_size();
+    test_pdf_sections();
+    test_pdf_lists();
+    test_pdf_code_block();
+    test_pdf_inline_markup();
+    test_pdf_admonition();
+    test_pdf_hrule();
+    test_pdf_multipage();
+    test_pdf_escape_special_chars();
+    test_pdf_empty_font_path_fallback();
+    test_pdf_invalid_font_path_fallback();
+    test_pdf_ttf_font_embedded();
+    test_pdf_ttf_object_layout();
+    test_pdf_ttf_widths_differ_from_helvetica();
+    test_pdf_ttf_xref_still_valid_with_font();
 
     // Summary
     std::cout << "\n============================\n";

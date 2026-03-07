@@ -37,6 +37,7 @@ endif()
 # ── Main executable ───────────────────────────────────────────────────────────
 add_executable(asciiquack
     asciiquack.cpp
+    minipdf.cpp
     parser.cpp
 )
 
@@ -52,6 +53,7 @@ if(BUILD_TESTS)
 
     add_executable(asciiquack_tests
         test_asciiquack.cpp
+        minipdf.cpp
         parser.cpp
     )
 
@@ -68,6 +70,7 @@ option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
 if(BUILD_BENCHMARK)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
+        minipdf.cpp
         parser.cpp
     )
 
