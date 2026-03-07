@@ -67,6 +67,12 @@ public:
 
     /// Parse a single attribute-entry line ( :name: value ) and apply it to
     /// the document.  Returns true if the line was an attribute entry.
+    /// This overload reads (and consumes) the line and any continuation lines
+    /// from @p reader.
+    static bool parse_attribute_entry(Reader& reader, Document& doc);
+
+    /// Overload: parse from a pre-read line only (no continuation support).
+    /// Caller must call reader.skip_line() if this returns true.
     static bool parse_attribute_entry(const std::string& line, Document& doc);
 
     // ── Block-level parsing ────────────────────────────────────────────────────

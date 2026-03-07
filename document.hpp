@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -272,11 +273,14 @@ public:
     [[nodiscard]] int  number()   const noexcept { return number_; }
     [[nodiscard]] const std::string& sectname() const noexcept { return sectname_; }
 
-    void set_level(int v)            { level_    = v; }
-    void set_numbered(bool v)        { numbered_ = v; }
-    void set_special(bool v)         { special_  = v; }
-    void set_number(int v)           { number_   = v; }
-    void set_sectname(std::string v) { sectname_ = std::move(v); }
+    void set_level(int v)              { level_         = v; }
+    void set_numbered(bool v)          { numbered_      = v; }
+    void set_special(bool v)           { special_       = v; }
+    void set_number(int v)             { number_        = v; }
+    void set_sectname(std::string v)   { sectname_      = std::move(v); }
+    void set_sectnum_string(std::string v) { sectnum_string_ = std::move(v); }
+
+    [[nodiscard]] const std::string& sectnum_string() const noexcept { return sectnum_string_; }
 
 private:
     int  level_    = 1;
@@ -284,6 +288,7 @@ private:
     bool special_  = false;
     int  number_   = 0;
     std::string sectname_;
+    std::string sectnum_string_;  ///< e.g. "1.2.3." when sectnums is active
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -323,6 +328,17 @@ struct DocumentHeader {
     std::vector<AuthorInfo> authors;
     RevisionInfo            revision;
     bool                    has_header = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TocEntry  –  a single entry in the auto-generated Table of Contents
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct TocEntry {
+    std::string id;
+    std::string title;
+    int         level  = 1;
+    std::string sectnum;  ///< section number prefix, e.g. "1.2." (empty if not numbered)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -395,6 +411,49 @@ public:
     int next_section_number() noexcept { return ++section_counter_; }
     [[nodiscard]] int section_counter() const noexcept { return section_counter_; }
 
+    /// Increment the per-level section counter and return the new value.
+    int increment_secnum(int level) noexcept {
+        if (level >= 1 && level <= 6) {
+            return ++secnum_counters_[static_cast<std::size_t>(level)];
+        }
+        return 0;
+    }
+
+    /// Reset all section counters deeper than @p level to zero.
+    void reset_secnums_below(int level) noexcept {
+        for (int l = level + 1; l <= 6; ++l) {
+            secnum_counters_[static_cast<std::size_t>(l)] = 0;
+        }
+    }
+
+    /// Return the current counter value for the given section level (1–6).
+    [[nodiscard]] int secnum_at(int level) const noexcept {
+        if (level >= 1 && level <= 6) {
+            return secnum_counters_[static_cast<std::size_t>(level)];
+        }
+        return 0;
+    }
+
+    // ── Table of Contents catalogue ────────────────────────────────────────────
+
+    void add_toc_entry(TocEntry e)                               { toc_entries_.push_back(std::move(e)); }
+    [[nodiscard]] const std::vector<TocEntry>& toc_entries() const noexcept { return toc_entries_; }
+
+    // ── Include-depth tracking ─────────────────────────────────────────────────
+
+    /// Try to enter an include nesting level.  Returns false if the depth
+    /// limit (controlled by the max-include-depth attribute) has been reached.
+    bool try_enter_include() noexcept {
+        int max = 64;
+        const auto& val = attr("max-include-depth");
+        if (!val.empty()) {
+            try { max = std::stoi(val); } catch (...) {}
+        }
+        if (include_count_ >= max) { return false; }
+        ++include_count_;
+        return true;
+    }
+
     // ── Reference catalogue ────────────────────────────────────────────────────
 
     using RefMap = std::unordered_map<std::string, std::string>;
@@ -416,6 +475,9 @@ private:
     DocumentHeader header_;
     SafeMode       safe_mode_     = SafeMode::Secure;
     int            section_counter_ = 0;
+    std::array<int, 7> secnum_counters_{};  ///< per-level counters [1..6]
+    int            include_count_  = 0;     ///< total includes processed
+    std::vector<TocEntry> toc_entries_;
     std::string    source_file_;
     std::string    base_dir_;
     RefMap         catalog_refs_;

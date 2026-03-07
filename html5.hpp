@@ -140,6 +140,15 @@ private:
             }
             out << "</div>\n";  // #header
 
+            // TOC placement: auto (in header) or preamble (after preamble)
+            if (doc.has_attr("toc")) {
+                const std::string& placement =
+                    doc.attr("toc-placement", "auto");
+                if (placement == "auto" || placement.empty()) {
+                    convert_toc(doc, out);
+                }
+            }
+
             out << "<div id=\"content\">\n";
         }
 
@@ -166,6 +175,14 @@ private:
             }
             out << "</div>\n";  // sectionbody
             out << "</div>\n";  // #preamble
+
+            // TOC after preamble (toc-placement: preamble)
+            if (!embedded && doc.has_attr("toc")) {
+                const std::string& placement = doc.attr("toc-placement", "auto");
+                if (placement == "preamble") {
+                    convert_toc(doc, out);
+                }
+            }
         }
 
         for (const Block* b : section_blocks) {
@@ -238,6 +255,18 @@ private:
             case BlockContext::Image:
                 convert_image(block, doc, out);
                 break;
+            case BlockContext::Video:
+                convert_video(block, doc, out);
+                break;
+            case BlockContext::Audio:
+                convert_audio(block, doc, out);
+                break;
+            case BlockContext::FloatingTitle:
+                convert_floating_title(block, doc, out);
+                break;
+            case BlockContext::Toc:
+                convert_toc(doc, out);
+                break;
             case BlockContext::Pass:
                 // Raw passthrough: emit content without any substitutions
                 out << block.source() << '\n';
@@ -272,13 +301,25 @@ private:
         out << "<div class=\"" << css << "\">\n";
 
         const std::string& id = sect.id();
+
+        // Build title text with optional section number prefix
+        std::string title_html;
+        if (sect.numbered() && !sect.sectnum_string().empty()) {
+            title_html = "<span class=\"sectnum\">"
+                       + sect.sectnum_string()
+                       + "</span> "
+                       + subs(sect.title(), doc);
+        } else {
+            title_html = subs(sect.title(), doc);
+        }
+
         if (!id.empty()) {
             out << "<" << tag << " id=\"" << id << "\">"
-                << subs(sect.title(), doc)
+                << title_html
                 << "</" << tag << ">\n";
         } else {
             out << "<" << tag << ">"
-                << subs(sect.title(), doc)
+                << title_html
                 << "</" << tag << ">\n";
         }
 
@@ -653,6 +694,151 @@ private:
         out << "</div>\n";
     }
 
+    // ── Video block ────────────────────────────────────────────────────────────
+
+    void convert_video(const Block& block, const Document& doc,
+                       std::ostringstream& out) const {
+        const std::string& target = block.attr("target");
+        const std::string& width  = block.attr("width");
+        const std::string& height = block.attr("height");
+        const std::string& role   = block.role();
+
+        out << "<div class=\"videoblock";
+        if (!role.empty()) { out << " " << role; }
+        out << "\">\n";
+        if (block.has_title()) {
+            out << "<div class=\"title\">" << subs(block.title(), doc) << "</div>\n";
+        }
+        out << "<div class=\"content\">\n"
+            << "<video src=\"" << sub_specialchars(target) << "\"";
+        if (!width.empty())  { out << " width=\""  << width  << "\""; }
+        if (!height.empty()) { out << " height=\"" << height << "\""; }
+        if (block.has_attr("autoplay")) { out << " autoplay"; }
+        if (block.has_attr("loop"))     { out << " loop"; }
+        if (block.has_attr("nocontrols")) {
+            // nocontrols: suppress default controls
+        } else {
+            out << " controls";
+        }
+        out << ">Your browser does not support the video tag.</video>\n"
+            << "</div>\n"
+            << "</div>\n";
+    }
+
+    // ── Audio block ────────────────────────────────────────────────────────────
+
+    void convert_audio(const Block& block, const Document& doc,
+                       std::ostringstream& out) const {
+        const std::string& target = block.attr("target");
+        const std::string& role   = block.role();
+
+        out << "<div class=\"audioblock";
+        if (!role.empty()) { out << " " << role; }
+        out << "\">\n";
+        if (block.has_title()) {
+            out << "<div class=\"title\">" << subs(block.title(), doc) << "</div>\n";
+        }
+        out << "<div class=\"content\">\n"
+            << "<audio src=\"" << sub_specialchars(target) << "\"";
+        if (block.has_attr("autoplay")) { out << " autoplay"; }
+        if (block.has_attr("loop"))     { out << " loop"; }
+        if (!block.has_attr("nocontrols")) { out << " controls"; }
+        out << ">Your browser does not support the audio tag.</audio>\n"
+            << "</div>\n"
+            << "</div>\n";
+    }
+
+    // ── Floating title ─────────────────────────────────────────────────────────
+
+    void convert_floating_title(const Block& block, const Document& doc,
+                                std::ostringstream& out) const {
+        int level = 1;
+        const std::string& lv_str = block.attr("level");
+        if (!lv_str.empty()) {
+            try { level = std::stoi(lv_str); } catch (...) {}
+        }
+        std::string tag = "h" + std::to_string(std::min(level + 1, 6));
+        const std::string& id = block.id();
+
+        out << "<" << tag << " class=\"discrete\"";
+        if (!id.empty()) { out << " id=\"" << id << "\""; }
+        out << ">" << subs(block.source(), doc) << "</" << tag << ">\n";
+    }
+
+    // ── Table of Contents ──────────────────────────────────────────────────────
+
+    void convert_toc(const Document& doc, std::ostringstream& out) const {
+        const auto& entries = doc.toc_entries();
+        if (entries.empty()) { return; }
+
+        int toclevels = 2;
+        if (doc.has_attr("toclevels")) {
+            try { toclevels = std::stoi(doc.attr("toclevels")); } catch (...) {}
+        }
+
+        std::string toc_title = doc.attr("toc-title", "Table of Contents");
+
+        out << "<div id=\"toc\" class=\"toc\">\n"
+            << "<div id=\"toctitle\">" << sub_specialchars(toc_title) << "</div>\n";
+
+        // We maintain a stack of open list levels.
+        // open_li[lv] = true means a <li> at that level has been opened but not yet
+        // closed with </li>.  This lets us insert a nested <ul> inside it.
+        static constexpr int MAX_LEVEL = 7;
+        std::array<bool, MAX_LEVEL> open_li{};
+        int list_depth = 0;  // deepest open <ul> level
+
+        for (const auto& entry : entries) {
+            if (entry.level < 1 || entry.level > toclevels) { continue; }
+            int lv = entry.level;
+
+            // ── Close deeper levels first ────────────────────────────────────
+            while (list_depth > lv) {
+                // Close the innermost open <li>, then the <ul>
+                if (list_depth < MAX_LEVEL && open_li[list_depth]) {
+                    out << "</li>\n";
+                    open_li[list_depth] = false;
+                }
+                out << "</ul>\n";
+                --list_depth;
+            }
+
+            // ── Open lists up to the required level ──────────────────────────
+            while (list_depth < lv) {
+                ++list_depth;
+                out << "<ul class=\"sectlevel" << list_depth << "\">\n";
+            }
+
+            // ── Close the previous item at this level (if any) ───────────────
+            if (lv < MAX_LEVEL && open_li[lv]) {
+                out << "</li>\n";
+                open_li[lv] = false;
+            }
+
+            // ── Emit the entry ────────────────────────────────────────────────
+            std::string title_text = entry.title;
+            if (!entry.sectnum.empty()) {
+                title_text = entry.sectnum + " " + title_text;
+            }
+            out << "<li><a href=\"#" << entry.id << "\">"
+                << sub_specialchars(title_text)
+                << "</a>";
+            if (lv < MAX_LEVEL) { open_li[lv] = true; }
+        }
+
+        // ── Close everything that's still open ────────────────────────────────
+        while (list_depth >= 1) {
+            if (list_depth < MAX_LEVEL && open_li[list_depth]) {
+                out << "</li>\n";
+                open_li[list_depth] = false;
+            }
+            out << "</ul>\n";
+            --list_depth;
+        }
+
+        out << "</div>\n";
+    }
+
     // ── Minimal default CSS ────────────────────────────────────────────────────
 
     /// Returns a minimal stylesheet sufficient for basic readability.
@@ -692,7 +878,18 @@ private:
             ".exampleblock{border:1px solid #ddd;border-radius:4px;padding:1em;margin:1em 0}\n"
             "img{max-width:100%;height:auto}\n"
             ".imageblock{text-align:center;margin:1em 0}\n"
-            ".imageblock .title{font-style:italic;color:#666;margin-top:.5em}\n";
+            ".imageblock .title{font-style:italic;color:#666;margin-top:.5em}\n"
+            "video,audio{max-width:100%}\n"
+            ".videoblock,.audioblock{margin:1em 0}\n"
+            ".sectnum{margin-right:.25em}\n"
+            "#toc{background:#f8f8f8;border:1px solid #ddd;border-radius:4px;"
+              "padding:1em 1.5em;margin:1em 0;display:inline-block;min-width:200px}\n"
+            "#toctitle{font-weight:bold;margin-bottom:.5em}\n"
+            "#toc ul{list-style:none;padding-left:0;margin:0}\n"
+            "#toc ul ul{padding-left:1.5em}\n"
+            "#toc a{text-decoration:none;color:#2c5282}\n"
+            "#toc a:hover{text-decoration:underline}\n"
+            "#toc li{margin:.25em 0}\n";
     }
 };
 
