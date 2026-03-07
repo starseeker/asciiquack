@@ -466,16 +466,23 @@ void Parser::parse_document_header(Reader& reader, Document& doc) {
             title_line = line;
         } else {
             // Setext-style (two-line) title: text on line 1, ==... on line 2
-            auto next_lines = reader.peek_lines(2);
-            if (next_lines.size() >= 2) {
-                std::string second{next_lines[1]};
-                if (!second.empty() &&
-                    second.find_first_not_of('=') == std::string::npos &&
-                    second.size() >= 2) {
-                    setext_title = true;
-                    reader.skip_line();
-                    title_line = line;
-                    reader.skip_line(); // consume the == line
+            // The first line must look like title text: not a block attribute [...]
+            // or attribute entry :name: or comment //.
+            bool candidate_title = !line.empty() &&
+                                   line[0] != '[' && line[0] != ':' &&
+                                   line.compare(0, 2, "//") != 0;
+            if (candidate_title) {
+                auto next_lines = reader.peek_lines(2);
+                if (next_lines.size() >= 2) {
+                    std::string second{next_lines[1]};
+                    if (!second.empty() &&
+                        second.find_first_not_of('=') == std::string::npos &&
+                        second.size() >= 2) {
+                        setext_title = true;
+                        reader.skip_line();
+                        title_line = line;
+                        reader.skip_line(); // consume the == line
+                    }
                 }
             }
         }
@@ -691,6 +698,19 @@ void Parser::parse_blocks(Reader& reader, Block& parent) {
     }
 }
 
+void Parser::parse_blocks_until(Reader& reader, Block& parent,
+                                const std::string& terminator) {
+    while (reader.has_more_lines()) {
+        auto peeked = reader.peek_line();
+        if (peeked && std::string{*peeked} == terminator) {
+            reader.skip_line();  // consume the closing delimiter
+            return;
+        }
+        parse_next_block(reader, parent);
+    }
+    // EOF before finding terminator – treat as unclosed block (Ruby does the same)
+}
+
 bool Parser::parse_next_block(Reader& reader, Block& parent) {
     reader.skip_blank_lines();
     if (!reader.has_more_lines()) { return false; }
@@ -792,15 +812,10 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
                 if (to_lower(style) == "note"     || to_lower(style) == "tip" ||
                     to_lower(style) == "warning"   || to_lower(style) == "important" ||
                     to_lower(style) == "caution") {
-                    block = parse_admonition_block(reader, parent, pending_attrs);
-                    // Re-read until close – already done inside
+                    block = parse_admonition_block(reader, parent, pending_attrs, line);
                 } else {
                     auto b = std::make_shared<Block>(BlockContext::Example, &parent, ContentModel::Compound);
-                    parse_blocks(reader, *b);  // parse until the closing delimiter
-                    // FIXME: currently parse_blocks runs to EOF; the caller
-                    // needs a terminator-aware variant. For now we rely on the
-                    // admonition / example blocks being closed by the next
-                    // matching delimiter in the outer parse_blocks call.
+                    parse_blocks_until(reader, *b, line);
                     block = b;
                 }
                 break;
@@ -816,12 +831,15 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
                     for (auto& l : b->lines()) { src += l; src += '\n'; }
                     if (!src.empty() && src.back() == '\n') { src.pop_back(); }
                     b->set_source(src);
+                } else {
+                    parse_blocks_until(reader, *b, line);
                 }
                 block = b;
                 break;
             }
             case BlockContext::Sidebar: {
                 auto b = std::make_shared<Block>(BlockContext::Sidebar, &parent, ContentModel::Compound);
+                parse_blocks_until(reader, *b, line);
                 block = b;
                 break;
             }
@@ -837,6 +855,7 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
             }
             case BlockContext::Open: {
                 auto b = std::make_shared<Block>(BlockContext::Open, &parent, ContentModel::Compound);
+                parse_blocks_until(reader, *b, line);
                 block = b;
                 break;
             }
@@ -1040,7 +1059,8 @@ BlockPtr Parser::parse_paragraph(
 
 BlockPtr Parser::parse_admonition_block(
         Reader& reader, Block& parent,
-        std::unordered_map<std::string, std::string>& pending_attrs)
+        std::unordered_map<std::string, std::string>& pending_attrs,
+        const std::string& delimiter)
 {
     auto style_it = pending_attrs.find("1");
     std::string label = (style_it != pending_attrs.end()) ? style_it->second : "NOTE";
@@ -1049,9 +1069,8 @@ BlockPtr Parser::parse_admonition_block(
     block->set_attr("name",    to_lower(label));
     block->set_attr("caption", label);
 
-    // The body is parsed as compound blocks until "===="
-    // (caller already consumed the opening delimiter)
-    parse_blocks(reader, *block);
+    // Parse compound body blocks until the matching closing delimiter.
+    parse_blocks_until(reader, *block, delimiter);
     return block;
 }
 

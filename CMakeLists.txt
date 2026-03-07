@@ -62,6 +62,20 @@ if(BUILD_TESTS)
     add_test(NAME asciiquack_tests COMMAND asciiquack_tests)
 endif()
 
+# ── Benchmark ─────────────────────────────────────────────────────────────────
+option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
+
+if(BUILD_BENCHMARK)
+    add_executable(bench_asciiquack
+        benchmark/bench_asciiquack.cpp
+        parser.cpp
+    )
+
+    target_include_directories(bench_asciiquack PRIVATE
+        ${CMAKE_SOURCE_DIR}
+    )
+endif()
+
 # ── Install ───────────────────────────────────────────────────────────────────
 include(GNUInstallDirs)
 
@@ -76,4 +90,5 @@ message(STATUS "  Build type   : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard : C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  Tests        : ${BUILD_TESTS}")
+message(STATUS "  Benchmark    : ${BUILD_BENCHMARK}")
 message(STATUS "")
