@@ -754,10 +754,31 @@ private:
 
         // Colgroup
         const auto& col_specs = table.column_specs();
+
+        // Helper: compute total width for proportional→percentage conversion.
+        // If all widths are 0 (auto-width), skip colgroup entirely.
+        auto colgroup_style = [&](const ColumnSpec& cs) -> std::string {
+            if (cs.width == 0) { return ""; }
+            return "width: " + std::to_string(cs.width) + "%";
+        };
+
+        // Build a map from column index → CSS halign class using column specs.
+        auto col_halign = [&](std::size_t col_idx) -> std::string {
+            if (col_idx < col_specs.size() && !col_specs[col_idx].halign.empty()) {
+                return "halign-" + col_specs[col_idx].halign;
+            }
+            return "halign-left";
+        };
+
         if (!col_specs.empty()) {
             out << "<colgroup>\n";
             for (const auto& cs : col_specs) {
-                out << "<col style=\"width: " << cs.width << "%\">\n";
+                std::string style = colgroup_style(cs);
+                if (!style.empty()) {
+                    out << "<col style=\"" << style << "\">\n";
+                } else {
+                    out << "<col>\n";
+                }
             }
             out << "</colgroup>\n";
         }
@@ -767,8 +788,9 @@ private:
             out << "<thead>\n";
             for (const auto& row : table.head_rows()) {
                 out << "<tr>\n";
-                for (const auto& cell : row.cells()) {
-                    out << "<th class=\"tableblock halign-left valign-top\">"
+                for (std::size_t ci = 0; ci < row.cells().size(); ++ci) {
+                    const auto& cell = row.cells()[ci];
+                    out << "<th class=\"tableblock " << col_halign(ci) << " valign-top\">"
                         << subs(cell->source(), doc) << "</th>\n";
                 }
                 out << "</tr>\n";
@@ -781,11 +803,26 @@ private:
             out << "<tbody>\n";
             for (const auto& row : table.body_rows()) {
                 out << "<tr>\n";
-                for (const auto& cell : row.cells()) {
-                    out << "<td class=\"tableblock halign-left valign-top\">"
-                        << "<p class=\"tableblock\">"
-                        << subs(cell->source(), doc)
-                        << "</p></td>\n";
+                for (std::size_t ci = 0; ci < row.cells().size(); ++ci) {
+                    const auto& cell = row.cells()[ci];
+                    // Determine alignment: cell-level overrides column spec
+                    std::string halign = cell->halign().empty()
+                                         ? col_halign(ci)
+                                         : "halign-" + cell->halign();
+                    // Column style 'h' makes the cell a header cell
+                    bool is_header_col = (ci < col_specs.size() &&
+                                          col_specs[ci].style == "h");
+                    if (is_header_col) {
+                        out << "<th class=\"tableblock " << halign << " valign-top\">"
+                            << "<p class=\"tableblock\">"
+                            << subs(cell->source(), doc)
+                            << "</p></th>\n";
+                    } else {
+                        out << "<td class=\"tableblock " << halign << " valign-top\">"
+                            << "<p class=\"tableblock\">"
+                            << subs(cell->source(), doc)
+                            << "</p></td>\n";
+                    }
                 }
                 out << "</tr>\n";
             }
@@ -797,8 +834,9 @@ private:
             out << "<tfoot>\n";
             for (const auto& row : table.foot_rows()) {
                 out << "<tr>\n";
-                for (const auto& cell : row.cells()) {
-                    out << "<td class=\"tableblock halign-left valign-top\">"
+                for (std::size_t ci = 0; ci < row.cells().size(); ++ci) {
+                    const auto& cell = row.cells()[ci];
+                    out << "<td class=\"tableblock " << col_halign(ci) << " valign-top\">"
                         << "<p class=\"tableblock\">"
                         << subs(cell->source(), doc)
                         << "</p></td>\n";
