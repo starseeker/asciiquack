@@ -15,6 +15,7 @@
 #include "html5.hpp"
 #include "manpage.hpp"
 #include "parser.hpp"
+#include "pdf.hpp"
 #include "reader.hpp"
 
 #include <cstdlib>
@@ -130,6 +131,7 @@ static int convert_one(const std::string&    source_path,
         std::string suffix = ".html";
         if (params.backend == "docbook5")  { suffix = ".xml"; }
         else if (params.backend == "manpage") { suffix = ".1"; }
+        else if (params.backend == "pdf")  { suffix = ".pdf"; }
         out_path = (out_dir / in.stem()).string() + suffix;
     }
 
@@ -141,6 +143,10 @@ static int convert_one(const std::string&    source_path,
         output = asciiquack::convert_to_html5(*doc);
     } else if (params.backend == "manpage") {
         output = asciiquack::convert_to_manpage(*doc);
+    } else if (params.backend == "pdf") {
+        bool a4 = (params.attributes.count("pdf-page-size") &&
+                   params.attributes.at("pdf-page-size") == "A4");
+        output = asciiquack::convert_to_pdf(*doc, a4);
     } else {
         std::cerr << "asciiquack: backend '" << params.backend
                   << "' is not yet implemented; falling back to html5\n";
@@ -171,7 +177,7 @@ int main(int argc, char* argv[]) {
 
     options.add_options("Conversion")
         ("b,backend",
-            "Output format: html5, xhtml5, manpage (default: html5)",
+            "Output format: html5, xhtml5, manpage, pdf (default: html5)",
             cxxopts::value<std::string>()->default_value("html5"))
         ("d,doctype",
             "Document type: article, book, manpage, inline (default: article)",
