@@ -139,7 +139,7 @@ Content continues after the rule above.
 When an image target is present in the source the PDF output shows a
 placeholder (full image rendering is not yet implemented):
 
-image::diagram.png[Architecture diagram,width=400]
+image::asciiquack.png[asciiquack,width=400]
 
 ''''
 
