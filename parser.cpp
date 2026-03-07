@@ -23,6 +23,7 @@
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace asciiquack {
 
@@ -1374,6 +1375,26 @@ std::shared_ptr<Section> Parser::parse_section(
         }
     }
 
+    // ── Special section names ([preface], [appendix], …) ─────────────────────
+    // If the immediately preceding block-attribute line set a style that is a
+    // recognised special section name, apply it to the section.
+    {
+        static const std::unordered_set<std::string> special_names = {
+            "preface", "appendix", "abstract", "colophon",
+            "glossary", "bibliography", "index"
+        };
+        auto sit = pending_attrs.find("1");
+        if (sit != pending_attrs.end()) {
+            std::string sname = sit->second;
+            for (char& c : sname) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+            if (special_names.count(sname)) {
+                sect->set_special(true);
+                sect->set_sectname(sname);
+                sect->set_style(sname);
+            }
+        }
+    }
+
     (void)pending_attrs;  // will be applied by caller
     return sect;
 }
@@ -1503,9 +1524,27 @@ std::shared_ptr<List> Parser::parse_list(
         ListType list_type, const std::string& first_line,
         std::unordered_map<std::string, std::string>& pending_attrs)
 {
-    (void)pending_attrs;
-
     auto list = std::make_shared<List>(list_type, &parent);
+
+    // ── Apply ordered-list style from block attribute ─────────────────────────
+    if (list_type == ListType::Ordered) {
+        auto sit = pending_attrs.find("1");
+        if (sit != pending_attrs.end()) {
+            std::string style_lc = sit->second;
+            for (char& c : style_lc) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+            if      (style_lc == "arabic")     { list->set_ordered_style(OrderedListStyle::Arabic); }
+            else if (style_lc == "loweralpha") { list->set_ordered_style(OrderedListStyle::LowerAlpha); }
+            else if (style_lc == "upperalpha") { list->set_ordered_style(OrderedListStyle::UpperAlpha); }
+            else if (style_lc == "lowerroman") { list->set_ordered_style(OrderedListStyle::LowerRoman); }
+            else if (style_lc == "upperroman") { list->set_ordered_style(OrderedListStyle::UpperRoman); }
+        }
+        // start= attribute
+        auto start_it = pending_attrs.find("start");
+        if (start_it != pending_attrs.end()) {
+            list->set_attr("start", start_it->second);
+        }
+    }
+    (void)pending_attrs;
 
     // Determine the first marker so we can detect siblings vs sub-lists
     auto first_match = match_list_item(first_line);
@@ -1513,7 +1552,8 @@ std::shared_ptr<List> Parser::parse_list(
     std::string root_marker = first_match->marker;
 
     // Helper: collect lines for the item body (up to blank line or next
-    // same-level item)
+    // same-level item).  After the first line, a '+' on its own line
+    // introduces compound block content that is parsed into the item.
     auto collect_item = [&](const std::string& text_line) -> std::shared_ptr<ListItem> {
         auto item = std::make_shared<ListItem>(list.get());
         item->set_marker(root_marker);
@@ -1523,31 +1563,68 @@ std::shared_ptr<List> Parser::parse_list(
         if (!lm) { return nullptr; }
 
         if (list_type == ListType::Description) {
-            item->set_term(text_line.substr(0, text_line.find(lm->marker)));
-            trim(const_cast<std::string&>(item->term()));
+            // term is everything before the '::' / ';;' marker
+            auto marker_pos = text_line.find(lm->marker);
+            std::string term = (marker_pos != std::string::npos)
+                                ? text_line.substr(0, marker_pos)
+                                : text_line;
+            trim(term);
+            item->set_term(term);
         }
 
-        // Collect continuation lines
+        // Collect simple text continuation lines
         std::string src = lm->text;
-        // Check for list continuation (+)
+
         while (reader.has_more_lines()) {
             auto peeked = reader.peek_line();
             if (!peeked) { break; }
             std::string nxt{*peeked};
+
             if (is_blank(nxt)) { break; }
+
             // Sibling list item at the same level
             if (auto nm = match_list_item(nxt)) {
                 if (nm->type == list_type && nm->marker == root_marker) { break; }
             }
-            // List continuation (+ on its own line)
-            if (nxt == "+") { reader.skip_line(); continue; }
-            // Otherwise it's continuation text
+
+            // List continuation '+' – what follows may be block content
+            if (nxt == "+") {
+                reader.skip_line();  // consume '+'
+                // Set source so far on the item before parsing the attached block
+                if (!src.empty()) {
+                    item->set_source(src);
+                    src.clear();
+                }
+                // Skip blank lines before the next attached block
+                reader.skip_blank_lines();
+                if (!reader.has_more_lines()) { break; }
+
+                // Peek next: if it looks like a block delimiter or starts with the
+                // list marker, parse it as a block attached to this item.
+                parse_next_block(reader, *item);
+
+                // After the attached block there may be another '+' continuation
+                reader.skip_blank_lines();
+                if (!reader.has_more_lines()) { break; }
+                auto after = reader.peek_line();
+                if (!after) { break; }
+                std::string after_str{*after};
+                // If the next line is another same-level list item, stop here
+                if (auto nm = match_list_item(after_str)) {
+                    if (nm->type == list_type && nm->marker == root_marker) { break; }
+                }
+                continue;
+            }
+
+            // Otherwise it's simple text continuation
             reader.skip_line();
             src += ' ';
             src += nxt;
         }
 
-        item->set_source(src);
+        if (!src.empty()) {
+            item->set_source(src);
+        }
         return item;
     };
 

@@ -22,6 +22,7 @@
 #pragma once
 
 #include <array>
+#include <cctype>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -192,7 +193,7 @@ public:
     }
 
     void set_attr(std::string name, std::string value) {
-        attributes_.emplace(std::move(name), std::move(value));
+        attributes_.insert_or_assign(std::move(name), std::move(value));
     }
 
     void remove_attr(const std::string& name) { attributes_.erase(name); }
@@ -471,6 +472,39 @@ public:
         return std::nullopt;
     }
 
+    // ── Named counters (counter: / counter2: inline macros) ───────────────────
+
+    /// Increment named counter; return new value as string.
+    /// @p initial – initial value if counter not yet seen ("1" for numeric,
+    ///              "a" for alpha).  Defaults to "1".
+    std::string increment_counter(const std::string& name,
+                                   const std::string& initial = "1") {
+        auto it = named_counters_.find(name);
+        if (it == named_counters_.end()) {
+            // Initialise from initial value
+            int start = 1;
+            if (!initial.empty() && std::isalpha(static_cast<unsigned char>(initial[0]))) {
+                // Alpha counter: a=1, b=2, …
+                start = static_cast<int>(
+                    std::tolower(static_cast<unsigned char>(initial[0])) - 'a' + 1);
+                named_counters_[name] = start;
+                // Return as alpha character
+                char c = static_cast<char>('a' + (start - 1));
+                return std::string(1, c);
+            }
+            try { start = std::stoi(initial); } catch (...) {}
+            named_counters_[name] = start;
+            return std::to_string(start);
+        }
+        ++it->second;
+        return std::to_string(it->second);
+    }
+
+    [[nodiscard]] int counter_value(const std::string& name) const noexcept {
+        auto it = named_counters_.find(name);
+        return (it != named_counters_.end()) ? it->second : 0;
+    }
+
 private:
     DocumentHeader header_;
     SafeMode       safe_mode_     = SafeMode::Secure;
@@ -481,6 +515,7 @@ private:
     std::string    source_file_;
     std::string    base_dir_;
     RefMap         catalog_refs_;
+    std::unordered_map<std::string, int> named_counters_;  ///< counter: macros
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

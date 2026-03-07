@@ -1288,6 +1288,342 @@ static void test_ifeval_numeric() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// P2 features tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_inline_passthrough() {
+    begin_test("substitutors: pass:[] inline passthrough");
+
+    // pass:[] with no subs – content is emitted raw (not HTML-escaped)
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Raw pass:pass:[<b>bold</b>] here.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // The raw HTML should be present (not escaped)
+    EXPECT_CONTAINS(out, "<b>bold</b>");
+    // The pass:[] macro text itself should not appear
+    EXPECT_NOT_CONTAINS(out, "pass:[");
+
+    end_test();
+}
+
+static void test_inline_passthrough_q() {
+    begin_test("substitutors: pass:q[] quotes-only passthrough");
+
+    // pass:q[] applies only quotes substitution inside
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "pass:q[*bold text* inside pass]\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<strong>bold text</strong>");
+
+    end_test();
+}
+
+static void test_kbd_macro() {
+    begin_test("substitutors: kbd:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Press kbd:[Ctrl+T] to open a new tab.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<kbd>Ctrl</kbd>");
+    EXPECT_CONTAINS(out, "<kbd>T</kbd>");
+    EXPECT_CONTAINS(out, "keyseq");
+
+    end_test();
+}
+
+static void test_btn_macro() {
+    begin_test("substitutors: btn:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Click btn:[OK] to continue.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<b class=\"button\">OK</b>");
+
+    end_test();
+}
+
+static void test_menu_macro() {
+    begin_test("substitutors: menu:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Use menu:File[Save] to save.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<span class=\"menuseq\">");
+    EXPECT_CONTAINS(out, "<span class=\"menu\">File</span>");
+    EXPECT_CONTAINS(out, "<span class=\"menuitem\">Save</span>");
+
+    end_test();
+}
+
+static void test_counter_macro() {
+    begin_test("substitutors: counter: inline macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Item counter:item. Item counter:item. Item counter:item.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // counter:item increments each time; should produce 1, 2, 3
+    EXPECT_CONTAINS(out, "Item 1.");
+    EXPECT_CONTAINS(out, "Item 2.");
+    EXPECT_CONTAINS(out, "Item 3.");
+
+    end_test();
+}
+
+static void test_counter2_macro() {
+    begin_test("substitutors: counter2: does not emit value");
+
+    // counter2: increments but produces no output
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "counter2:hidden. counter2:hidden. Value: counter:hidden.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // counter2: should produce nothing; the final counter: should show 3
+    EXPECT_CONTAINS(out, "Value: 3.");
+
+    end_test();
+}
+
+static void test_footnote_macro() {
+    begin_test("html5: footnote:[] macro rendered at end");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Some text.footnote:[This is a footnote.] More text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Inline footnote reference marker
+    EXPECT_CONTAINS(out, "class=\"footnote\"");
+    EXPECT_CONTAINS(out, "_footnoteref_1");
+    // Footnote body at end of document
+    EXPECT_CONTAINS(out, "id=\"footnotes\"");
+    EXPECT_CONTAINS(out, "This is a footnote.");
+    EXPECT_CONTAINS(out, "_footnotedef_1");
+
+    end_test();
+}
+
+static void test_footnote_multiple() {
+    begin_test("html5: multiple footnotes numbered sequentially");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "First.footnote:[Note one.] Second.footnote:[Note two.]\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "_footnoteref_1");
+    EXPECT_CONTAINS(out, "_footnoteref_2");
+    EXPECT_CONTAINS(out, "Note one.");
+    EXPECT_CONTAINS(out, "Note two.");
+
+    end_test();
+}
+
+static void test_ordered_list_style() {
+    begin_test("html5: [loweralpha] ordered list style");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[loweralpha]\n"
+        ". First\n"
+        ". Second\n"
+        ". Third\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "class=\"loweralpha\"");
+    EXPECT_CONTAINS(out, "olist loweralpha");
+
+    end_test();
+}
+
+static void test_ordered_list_start() {
+    begin_test("html5: [start=3] ordered list start attribute");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[start=3]\n"
+        ". Third item\n"
+        ". Fourth item\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "start=\"3\"");
+
+    end_test();
+}
+
+static void test_special_section_names() {
+    begin_test("html5: special section names ([preface], [appendix])");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[preface]\n"
+        "== Preface\n"
+        "\n"
+        "Preface text.\n"
+        "\n"
+        "[appendix]\n"
+        "== Appendix A\n"
+        "\n"
+        "Appendix text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "class=\"preface\"");
+    EXPECT_CONTAINS(out, "class=\"appendix\"");
+
+    end_test();
+}
+
+static void test_compound_list_items() {
+    begin_test("parser+html5: compound list items (+ continuation)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "* First item\n"
+        "+\n"
+        "Attached paragraph in first item.\n"
+        "\n"
+        "* Second item\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "First item");
+    EXPECT_CONTAINS(out, "Attached paragraph in first item.");
+    EXPECT_CONTAINS(out, "Second item");
+    // The attached paragraph should be inside the list item
+    auto li_pos  = out.find("<li>");
+    auto para_pos = out.find("Attached paragraph");
+    auto li2_pos = out.find("<li>", li_pos + 1);
+    EXPECT(li_pos  != std::string::npos);
+    EXPECT(para_pos != std::string::npos);
+    EXPECT(li2_pos  != std::string::npos);
+    EXPECT(para_pos < li2_pos);  // attached para comes before the 2nd <li>
+
+    end_test();
+}
+
+static void test_dlist_compound_body() {
+    begin_test("html5: description list with compound body blocks");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "term1::\n"
+        "Body paragraph.\n"
+        "+\n"
+        "Second paragraph.\n"
+        "\n"
+        "term2:: Simple body.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "term1");
+    EXPECT_CONTAINS(out, "Body paragraph.");
+    EXPECT_CONTAINS(out, "term2");
+    EXPECT_CONTAINS(out, "Simple body.");
+
+    end_test();
+}
+
+static void test_idprefix_empty() {
+    begin_test("html5: idprefix empty string (id without leading underscore)");
+
+    const std::string src =
+        "= Doc\n"
+        ":idprefix:\n"
+        ":idseparator: -\n"
+        "\n"
+        "== My Section\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // ID should be "my-section" not "_my_section"
+    EXPECT_CONTAINS(out, "id=\"my-section\"");
+
+    end_test();
+}
+
+static void test_bug4_inline_bold_url() {
+    begin_test("bug #4: constrained bold does not match inside URLs");
+
+    // A URL containing a '*' character should not trigger constrained bold
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "See https://example.com/path*query for details.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // The URL should not be broken by bold substitution
+    EXPECT_CONTAINS(out, "example.com/path");
+    EXPECT_NOT_CONTAINS(out, "<strong>query");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1392,6 +1728,25 @@ int main(int argc, char* argv[]) {
     test_include_directive();
     test_include_directive_secure_mode();
     test_bug7_description_list_not_table();
+
+    // P2 features
+    std::cout << "\nP2 features and bug fix tests:\n";
+    test_inline_passthrough();
+    test_inline_passthrough_q();
+    test_kbd_macro();
+    test_btn_macro();
+    test_menu_macro();
+    test_counter_macro();
+    test_counter2_macro();
+    test_footnote_macro();
+    test_footnote_multiple();
+    test_ordered_list_style();
+    test_ordered_list_start();
+    test_special_section_names();
+    test_compound_list_items();
+    test_dlist_compound_body();
+    test_idprefix_empty();
+    test_bug4_inline_bold_url();
 
     // Summary
     std::cout << "\n============================\n";

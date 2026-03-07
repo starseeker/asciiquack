@@ -4,12 +4,14 @@
 /// Mirrors the Ruby Asciidoctor Substitutors module.
 ///
 /// Substitution pipeline (applied in order for "normal" subs):
+///   0. pass macros       – extract pass:[] regions into protected stash
 ///   1. specialcharacters  – escape &, <, >
 ///   2. quotes             – bold, italic, monospace, …
-///   3. attributes         – {name} references
+///   3. attributes         – {name} references  (+ counter: macros)
 ///   4. replacements       – (C), (R), (TM), --, …, '
-///   5. macros             – link:, image:, <<xref>>, etc.
+///   5. macros             – link:, image:, <<xref>>, footnote:, etc.
 ///   6. post_replacements  – hard line-break marker (" +")
+///   9. pass restore       – restore protected stash regions
 ///
 /// Each function is a pure transformation: it takes a string and returns a
 /// new string with the substitution applied.
@@ -17,12 +19,136 @@
 #pragma once
 
 #include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace asciiquack {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InlineContext  –  mutable state shared across inline substitutions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Holds per-conversion mutable state needed by the inline substitution
+/// pipeline: attribute map reference, named counters, and collected footnotes.
+struct FootnoteEntry {
+    int         number;   ///< sequential number (1-based)
+    std::string id;       ///< named anchor id (empty for anonymous footnotes)
+    std::string text;     ///< footnote body text
+};
+
+/// Context passed through the inline substitution pipeline.
+/// The caller (Html5Converter) owns this and passes it by pointer.
+struct InlineContext {
+    const std::unordered_map<std::string, std::string>& attrs;
+
+    /// Mutable counter map.  May be nullptr if counter: macros are not needed.
+    std::unordered_map<std::string, int>* counters = nullptr;
+
+    /// Collected footnotes.  May be nullptr if footnotes are not needed.
+    std::vector<FootnoteEntry>* footnotes = nullptr;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 0. Pass macro extraction / restore  (must run before all other subs)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// pass:[content]   – emit content with NO substitutions
+// pass:q[content]  – apply only the quotes substitution to content
+// pass:c[content]  – apply only the specialchars substitution to content
+//
+// We use STX (\x02) and ETX (\x03) as placeholder delimiters.  They don't
+// appear in normal text and survive all subsequent substitution steps.
+
+/// Extract pass:[] macros, stash their content, and insert numeric placeholders.
+[[nodiscard]] inline std::string extract_pass_macros(
+        const std::string& text,
+        std::vector<std::string>& stash)
+{
+    // Match:  pass:<subs>[<content>]
+    // <subs> is optional letters (c, q, …); <content> may not contain ']'.
+    // We also handle the single-plus passthrough (+mono+ is already handled by
+    // sub_quotes, but triple-plus +++raw+++ needs pass treatment).
+    static const std::regex rx(
+        R"(pass:([a-z]*)(\[(?:[^\]\\]|\\.)*\]))",
+        std::regex::ECMAScript | std::regex::optimize);
+
+    std::string out;
+    out.reserve(text.size());
+
+    auto begin = std::sregex_iterator(text.begin(), text.end(), rx);
+    auto end   = std::sregex_iterator{};
+    std::size_t last = 0;
+
+    for (auto it = begin; it != end; ++it) {
+        const std::smatch& m = *it;
+        auto pos   = static_cast<std::size_t>(m.position());
+        auto len   = static_cast<std::size_t>(m.length());
+        out.append(text, last, pos - last);
+
+        const std::string subs_spec = m[1].str();   // "c", "q", "", …
+        // Extract content: strip surrounding [ ]
+        std::string content_raw = m[2].str();
+        if (content_raw.size() >= 2) {
+            content_raw = content_raw.substr(1, content_raw.size() - 2);
+        }
+        // Unescape any \] inside the content
+        std::string content;
+        for (std::size_t i = 0; i < content_raw.size(); ++i) {
+            if (content_raw[i] == '\\' && i + 1 < content_raw.size() &&
+                content_raw[i + 1] == ']') {
+                content += ']';
+                ++i;
+            } else {
+                content += content_raw[i];
+            }
+        }
+
+        // Apply requested substitutions to the pass content
+        // (specialchars is default for pass:c[]; quotes for pass:q[])
+        if (!subs_spec.empty()) {
+            if (subs_spec.find('c') != std::string::npos) {
+                // specialchars only
+                std::string esc;
+                esc.reserve(content.size());
+                for (char c : content) {
+                    switch (c) {
+                        case '&': esc += "&amp;";  break;
+                        case '<': esc += "&lt;";   break;
+                        case '>': esc += "&gt;";   break;
+                        default:  esc += c;        break;
+                    }
+                }
+                content = std::move(esc);
+            }
+            // pass:q[]: quotes substitution applied after restore (see note below)
+            // We just stash the raw content and mark it for q-subs
+            if (subs_spec.find('q') != std::string::npos) {
+                // Mark as needing quotes by prefixing with a sentinel
+                content = "\x05q\x05" + content;
+            }
+        }
+
+        // Build placeholder:  STX index ETX
+        out += '\x02';
+        out += std::to_string(stash.size());
+        out += '\x03';
+        stash.push_back(std::move(content));
+
+        last = pos + len;
+    }
+
+    out.append(text, last);
+    return out;
+}
+
+/// Replace placeholders with their stashed content.
+[[nodiscard]] inline std::string restore_pass_macros(
+        const std::string& text,
+        const std::vector<std::string>& stash);  // defined after sub_quotes
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Special characters
@@ -115,11 +241,14 @@ inline std::string apply_quote_rx(
     // std::regex (ECMAScript) does not support lookbehind, so we capture the
     // character before the opening marker in group $1 and re-emit it.
     // The lookahead (?=[^*\w]|$) for the closing boundary IS supported.
+    //
+    // Bug #4 fix: exclude '/' and ':' as the preceding character to avoid
+    // false positives in URLs (e.g. https://*host*/path).
 
     // *strong*
     {
         static const std::regex rx(
-            R"((^|[^*\w])\*(\S|\S.*?\S)\*(?=[^*\w]|$))",
+            R"((^|[^*\w/:])\*(\S|\S.*?\S)\*(?=[^*\w]|$))",
             std::regex::ECMAScript | std::regex::optimize);
         out = std::regex_replace(out, rx, "$1<strong>$2</strong>");
     }
@@ -164,6 +293,46 @@ inline std::string apply_quote_rx(
         out = std::regex_replace(out, rx, "<sub>$1</sub>");
     }
 
+    return out;
+}
+
+/// Replace placeholders (inserted by extract_pass_macros) with stashed content.
+[[nodiscard]] inline std::string restore_pass_macros(
+        const std::string& text,
+        const std::vector<std::string>& stash)
+{
+    if (stash.empty()) { return text; }
+
+    std::string out;
+    out.reserve(text.size());
+    const std::size_t n = text.size();
+
+    for (std::size_t i = 0; i < n; ) {
+        if (text[i] == '\x02') {
+            // Find the closing ETX
+            std::size_t j = i + 1;
+            while (j < n && text[j] != '\x03') { ++j; }
+            if (j < n) {
+                std::string idx_str(text, i + 1, j - i - 1);
+                try {
+                    std::size_t idx = std::stoul(idx_str);
+                    if (idx < stash.size()) {
+                        std::string content = stash[idx];
+                        // Check for q-subs sentinel (\x05 q \x05 prefix)
+                        if (content.size() >= 3 &&
+                            content[0] == '\x05' && content[1] == 'q' &&
+                            content[2] == '\x05') {
+                            content = sub_quotes(content.substr(3));
+                        }
+                        out += content;
+                    }
+                } catch (...) {}
+                i = j + 1;
+                continue;
+            }
+        }
+        out += text[i++];
+    }
     return out;
 }
 
@@ -391,12 +560,211 @@ inline std::string apply_quote_rx(
         out = std::regex_replace(out, rx, R"(<span class="image"><img src="$1" alt="$2"></span>)");
     }
 
+    // ── UI macros ─────────────────────────────────────────────────────────────
+
+    // kbd:[key] or kbd:[key+key+…]
+    {
+        static const std::regex rx(R"(kbd:\[([^\]]+)\])",
+                                   std::regex::ECMAScript | std::regex::optimize);
+        std::string after;
+        auto begin = std::sregex_iterator(out.begin(), out.end(), rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            after.append(out, last, static_cast<std::size_t>(m.position()) - last);
+            // Split on '+' to render individual keys
+            std::string keys_str = m[1].str();
+            std::string keys_html;
+            std::istringstream ks(keys_str);
+            std::string key_part;
+            bool first_key = true;
+            while (std::getline(ks, key_part, '+')) {
+                // trim whitespace
+                while (!key_part.empty() && key_part.front() == ' ') { key_part.erase(0, 1); }
+                while (!key_part.empty() && key_part.back()  == ' ') { key_part.pop_back(); }
+                if (!first_key) { keys_html += "+"; }
+                keys_html += "<kbd>" + key_part + "</kbd>";
+                first_key = false;
+            }
+            after += "<span class=\"keyseq\">" + keys_html + "</span>";
+            last = static_cast<std::size_t>(m.position()) + static_cast<std::size_t>(m.length());
+        }
+        after.append(out, last);
+        out = std::move(after);
+    }
+
+    // btn:[label]
+    {
+        static const std::regex rx(R"(btn:\[([^\]]+)\])",
+                                   std::regex::ECMAScript | std::regex::optimize);
+        out = std::regex_replace(out, rx, R"(<b class="button">$1</b>)");
+    }
+
+    // menu:Menu[Item > SubItem]  or  menu:Menu[]
+    {
+        static const std::regex rx(R"(menu:([^\[]+)\[([^\]]*)\])",
+                                   std::regex::ECMAScript | std::regex::optimize);
+        std::string after;
+        auto begin = std::sregex_iterator(out.begin(), out.end(), rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            after.append(out, last, static_cast<std::size_t>(m.position()) - last);
+            std::string menu_str = m[1].str();
+            // trim
+            while (!menu_str.empty() && menu_str.back() == ' ') { menu_str.pop_back(); }
+            std::string items_str = m[2].str();
+            std::string html = "<span class=\"menuseq\"><span class=\"menu\">" + menu_str + "</span>";
+            if (!items_str.empty()) {
+                // Split on '>' or ','
+                std::istringstream is(items_str);
+                std::string part;
+                while (std::getline(is, part, '>')) {
+                    while (!part.empty() && part.front() == ' ') { part.erase(0, 1); }
+                    while (!part.empty() && part.back()  == ' ') { part.pop_back(); }
+                    if (!part.empty()) {
+                        html += "<span class=\"caret\">&#8250;</span>"
+                                "<span class=\"menuitem\">" + part + "</span>";
+                    }
+                }
+            }
+            html += "</span>";
+            after += html;
+            last = static_cast<std::size_t>(m.position()) + static_cast<std::size_t>(m.length());
+        }
+        after.append(out, last);
+        out = std::move(after);
+    }
+
     return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Post-replacements  (hard line-break)
+// 5b. Footnote + counter macro substitutions (context-aware)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Apply footnote:[] / footnoteref:[] and counter:/counter2: macros.
+/// These require mutable state from @p ctx.
+[[nodiscard]] inline std::string sub_macros_with_ctx(
+        const std::string& text,
+        InlineContext& ctx)
+{
+    std::string out = text;
+
+    // ── counter: / counter2: ─────────────────────────────────────────────────
+    // Format:  counter:name[initial]  or  counter2:name[initial]
+    // counter: returns the (incremented) value; counter2: does not return it.
+    if (out.find("counter") != std::string::npos && ctx.counters) {
+        static const std::regex rx(
+            R"((counter2?):(\w[\w\-]*)(?:\[([^\]]*)\])?)",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::string after;
+        auto begin = std::sregex_iterator(out.begin(), out.end(), rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            after.append(out, last, static_cast<std::size_t>(m.position()) - last);
+
+            std::string kind    = m[1].str();  // "counter" or "counter2"
+            std::string name    = m[2].str();
+            std::string initial = m[3].matched ? m[3].str() : "1";
+
+            // Determine if alpha or numeric
+            bool alpha = (!initial.empty() &&
+                          std::isalpha(static_cast<unsigned char>(initial[0])));
+            auto cit = ctx.counters->find(name);
+            int val;
+            if (cit == ctx.counters->end()) {
+                // Initialise
+                if (alpha) {
+                    val = static_cast<int>(
+                        std::tolower(static_cast<unsigned char>(initial[0])) - 'a' + 1);
+                } else {
+                    try { val = std::stoi(initial); } catch (...) { val = 1; }
+                }
+                (*ctx.counters)[name] = val;
+            } else {
+                ++cit->second;
+                val = cit->second;
+            }
+
+            if (kind == "counter") {
+                if (alpha) {
+                    after += static_cast<char>('a' + (val - 1));
+                } else {
+                    after += std::to_string(val);
+                }
+            }
+            // counter2: emits nothing
+
+            last = static_cast<std::size_t>(m.position()) +
+                   static_cast<std::size_t>(m.length());
+        }
+        after.append(out, last);
+        out = std::move(after);
+    }
+
+    // ── footnote:[text] / footnoteref:[id,text] ───────────────────────────────
+    if (out.find("footnote") != std::string::npos && ctx.footnotes) {
+        // footnote:[body text]
+        static const std::regex fn_rx(
+            R"(footnote(?:ref)?:\[([^\]]*)\])",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::string after;
+        auto begin = std::sregex_iterator(out.begin(), out.end(), fn_rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            after.append(out, last, static_cast<std::size_t>(m.position()) - last);
+
+            std::string content = m[1].str();
+            // Check for footnoteref format: id,text  or  id (back-reference)
+            std::string fn_id;
+            std::string fn_text;
+            auto comma = content.find(',');
+            if (comma != std::string::npos) {
+                fn_id   = content.substr(0, comma);
+                fn_text = content.substr(comma + 1);
+                while (!fn_text.empty() && fn_text.front() == ' ') { fn_text.erase(0, 1); }
+            } else {
+                // May be a back-reference (id only, no text) or anonymous footnote
+                fn_text = content;
+            }
+
+            // Look up existing footnote by id, or create a new one
+            int fn_num = 0;
+            if (!fn_id.empty()) {
+                for (const auto& e : *ctx.footnotes) {
+                    if (e.id == fn_id) { fn_num = e.number; break; }
+                }
+            }
+            if (fn_num == 0) {
+                fn_num = static_cast<int>(ctx.footnotes->size()) + 1;
+                ctx.footnotes->push_back({fn_num, fn_id, fn_text});
+            }
+
+            // Inline marker
+            after += "<sup class=\"footnote\">"
+                     "<a id=\"_footnoteref_" + std::to_string(fn_num) + "\" "
+                     "class=\"footnote\" "
+                     "href=\"#_footnotedef_" + std::to_string(fn_num) + "\" "
+                     "title=\"View footnote.\">" +
+                     std::to_string(fn_num) + "</a></sup>";
+
+            last = static_cast<std::size_t>(m.position()) +
+                   static_cast<std::size_t>(m.length());
+        }
+        after.append(out, last);
+        out = std::move(after);
+    }
+
+    return out;
+}
 
 /// Replace trailing " +" with <br>.
 [[nodiscard]] inline std::string sub_post_replacements(const std::string& text) {
@@ -410,17 +778,28 @@ inline std::string apply_quote_rx(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Apply the "normal" substitution pipeline to inline text:
-///   specialcharacters → quotes → attributes → replacements → macros → post
+///   pass-extract → specialcharacters → quotes → attributes →
+///   replacements → macros → post → pass-restore
+/// Optionally accepts an @p ctx for counter: and footnote: macro processing.
 [[nodiscard]] inline std::string apply_normal_subs(
         const std::string&                                    text,
-        const std::unordered_map<std::string, std::string>&   attrs)
+        const std::unordered_map<std::string, std::string>&   attrs,
+        InlineContext* ctx = nullptr)
 {
-    std::string s = sub_specialchars(text);
+    // Extract pass:[] regions first so they are protected from all other subs.
+    std::vector<std::string> pass_stash;
+    std::string s = extract_pass_macros(text, pass_stash);
+
+    s = sub_specialchars(s);
     s = sub_quotes(s);
     s = sub_attributes(s, attrs);
     s = sub_replacements(s);
     s = sub_macros(s);
+    if (ctx) { s = sub_macros_with_ctx(s, *ctx); }
     s = sub_post_replacements(s);
+
+    // Restore any pass:[] regions that were extracted.
+    if (!pass_stash.empty()) { s = restore_pass_macros(s, pass_stash); }
     return s;
 }
 

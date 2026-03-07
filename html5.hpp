@@ -28,18 +28,26 @@ public:
 
     /// Convert a parsed Document to an HTML 5 string.
     [[nodiscard]] std::string convert(const Document& doc) const {
+        // Reset per-conversion state
+        counters_.clear();
+        footnotes_.clear();
         std::ostringstream out;
         convert_document(doc, out);
         return out.str();
     }
 
 private:
+    // ── Per-conversion mutable state ──────────────────────────────────────────
+    mutable std::unordered_map<std::string, int> counters_;   ///< counter: macros
+    mutable std::vector<FootnoteEntry>           footnotes_;  ///< footnote: macros
+
     // ── Shorthand helpers ─────────────────────────────────────────────────────
 
-    /// Apply normal substitutions to inline text.
-    [[nodiscard]] static std::string subs(const std::string& text,
-                                          const Document&    doc) {
-        return apply_normal_subs(text, doc.attributes());
+    /// Apply normal substitutions to inline text (with counter/footnote ctx).
+    [[nodiscard]] std::string subs(const std::string& text,
+                                   const Document&    doc) const {
+        InlineContext ctx{doc.attributes(), &counters_, &footnotes_};
+        return apply_normal_subs(text, doc.attributes(), &ctx);
     }
 
     /// Escape HTML characters only (for code / literal content).
@@ -192,6 +200,11 @@ private:
         if (!embedded) {
             out << "</div>\n";  // #content
 
+            // ── Footnotes section ────────────────────────────────────────────
+            if (!footnotes_.empty()) {
+                convert_footnotes(footnotes_, doc, out);
+            }
+
             out << "<div id=\"footer\">\n";
             out << "<div id=\"footer-text\">\n";
             const auto& rev = doc.revision();
@@ -296,7 +309,14 @@ private:
         // etc.
         int depth = level;
         std::string tag = "h" + std::to_string(std::min(level + 1, 6));
-        std::string css = "sect" + std::to_string(depth);
+
+        // CSS class: use sectname for special sections, otherwise "sectN"
+        std::string css;
+        if (sect.special() && !sect.sectname().empty()) {
+            css = sect.sectname();
+        } else {
+            css = "sect" + std::to_string(depth);
+        }
 
         out << "<div class=\"" << css << "\">\n";
 
@@ -546,7 +566,11 @@ private:
             out << "<div class=\"title\">" << subs(list.title(), doc) << "</div>\n";
         }
 
-        out << "<ol class=\"" << style_class << "\">\n";
+        // start= attribute sets the starting number
+        const std::string& start_attr = list.attr("start");
+        out << "<ol class=\"" << style_class << "\"";
+        if (!start_attr.empty()) { out << " start=\"" << start_attr << "\""; }
+        out << ">\n";
         for (const auto& item : list.items()) {
             out << "<li>\n<p>" << subs(item->source(), doc) << "</p>\n";
             for (const auto& child : item->blocks()) {
@@ -569,8 +593,15 @@ private:
         out << "<dl>\n";
         for (const auto& item : list.items()) {
             out << "<dt class=\"hdlist1\">" << subs(item->term(), doc) << "</dt>\n";
-            if (!item->source().empty()) {
-                out << "<dd>\n<p>" << subs(item->source(), doc) << "</p>\n</dd>\n";
+            if (!item->source().empty() || !item->blocks().empty()) {
+                out << "<dd>\n";
+                if (!item->source().empty()) {
+                    out << "<p>" << subs(item->source(), doc) << "</p>\n";
+                }
+                for (const auto& child : item->blocks()) {
+                    convert_block(*child, doc, out);
+                }
+                out << "</dd>\n";
             } else {
                 out << "<dd></dd>\n";
             }
@@ -748,6 +779,25 @@ private:
             << "</div>\n";
     }
 
+    // ── Footnotes section ─────────────────────────────────────────────────────
+
+    void convert_footnotes(const std::vector<FootnoteEntry>& footnotes,
+                           const Document& doc,
+                           std::ostringstream& out) const {
+        if (footnotes.empty()) { return; }
+        out << "<div id=\"footnotes\">\n"
+            << "<hr>\n";
+        for (const auto& fn : footnotes) {
+            out << "<div class=\"footnote\" id=\"_footnotedef_"
+                << fn.number << "\">\n"
+                << "<a href=\"#_footnoteref_" << fn.number << "\">"
+                << fn.number << "</a>. "
+                << subs(fn.text, doc)
+                << "\n</div>\n";
+        }
+        out << "</div>\n";
+    }
+
     // ── Floating title ─────────────────────────────────────────────────────────
 
     void convert_floating_title(const Block& block, const Document& doc,
@@ -784,13 +834,13 @@ private:
         // We maintain a stack of open list levels.
         // open_li[lv] = true means a <li> at that level has been opened but not yet
         // closed with </li>.  This lets us insert a nested <ul> inside it.
-        static constexpr int MAX_LEVEL = 7;
+        static constexpr std::size_t MAX_LEVEL = 7;
         std::array<bool, MAX_LEVEL> open_li{};
-        int list_depth = 0;  // deepest open <ul> level
+        std::size_t list_depth = 0;  // deepest open <ul> level
 
         for (const auto& entry : entries) {
             if (entry.level < 1 || entry.level > toclevels) { continue; }
-            int lv = entry.level;
+            auto lv = static_cast<std::size_t>(entry.level);
 
             // ── Close deeper levels first ────────────────────────────────────
             while (list_depth > lv) {
@@ -889,7 +939,20 @@ private:
             "#toc ul ul{padding-left:1.5em}\n"
             "#toc a{text-decoration:none;color:#2c5282}\n"
             "#toc a:hover{text-decoration:underline}\n"
-            "#toc li{margin:.25em 0}\n";
+            "#toc li{margin:.25em 0}\n"
+            // footnotes
+            "#footnotes{border-top:1px solid #ccc;margin-top:1em;padding-top:.5em}\n"
+            ".footnote{font-size:.9em;color:#666;margin:.25em 0}\n"
+            "sup.footnote{font-size:.75em;vertical-align:super;line-height:0}\n"
+            "sup.footnote a{color:#2c5282;text-decoration:none}\n"
+            // UI macros
+            "kbd{font-family:monospace;border:1px solid #ccc;border-radius:3px;"
+              "padding:.1em .35em;font-size:.9em;background:#f5f5f5}\n"
+            ".keyseq{font-family:monospace;font-size:.9em}\n"
+            "b.button{border:1px solid #aaa;border-radius:3px;padding:.1em .35em;"
+              "font-size:.9em;background:#f0f0f0;font-weight:normal}\n"
+            ".menuseq,.menu,.menuitem{font-style:italic}\n"
+            ".caret{font-style:normal;font-weight:bold}\n";
     }
 };
 
