@@ -74,6 +74,11 @@ public:
     /// Parse the document body (everything after the header).
     static void parse_blocks(Reader& reader, Block& parent);
 
+    /// Parse blocks until @p terminator is encountered (or EOF).
+    /// The terminator line is consumed but not added to @p parent.
+    static void parse_blocks_until(Reader& reader, Block& parent,
+                                   const std::string& terminator);
+
     /// Parse the next block from @p reader and append it to @p parent.
     /// Returns false if no block was produced (e.g. blank region).
     static bool parse_next_block(Reader& reader, Block& parent);
@@ -127,7 +132,8 @@ private:
 
     static BlockPtr parse_admonition_block(
             Reader& reader, Block& parent,
-            std::unordered_map<std::string, std::string>& pending_attrs);
+            std::unordered_map<std::string, std::string>& pending_attrs,
+            const std::string& delimiter);
 
     static BlockPtr parse_image(
             Reader& reader, Block& parent, const std::string& line,

@@ -331,9 +331,10 @@ inline std::string apply_quote_rx(
         out = std::move(after);
     }
 
-    // Explicit link macro: link:url[text]  (must precede auto-link)
+    // Explicit link macro: link:url[text]
+    // Matches any URL (absolute or relative), not just http/https.
     {
-        static const std::regex rx(R"(link:(https?://[^\[]+)\[([^\]]*)\])",
+        static const std::regex rx(R"(link:([^\[]+)\[([^\]]*)\])",
                                    std::regex::ECMAScript | std::regex::optimize);
         std::string after;
         {

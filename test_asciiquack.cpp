@@ -651,9 +651,122 @@ static void test_html5_table() {
     end_test();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Integration tests  (full sample.adoc)
-// ─────────────────────────────────────────────────────────────────────────────
+static void test_html5_link_relative() {
+    begin_test("html5: link macro with relative URL");
+    std::string out = html("See link:/docs/guide[the guide].\n");
+    EXPECT_CONTAINS(out, "<a href=\"/docs/guide\">");
+    EXPECT_CONTAINS(out, "the guide");
+    end_test();
+}
+
+
+static void test_parser_example_block_closed() {
+    begin_test("parser: example block properly closed by delimiter");
+
+    const std::string src =
+        "====\n"
+        "Inside example.\n"
+        "====\n"
+        "\n"
+        "After example.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    // Should have two blocks: the example block and the paragraph after it
+    EXPECT(doc->blocks().size() >= 2);
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Example);
+    // The "After example." paragraph must be a sibling, not swallowed into the example
+    bool found_after = false;
+    for (const auto& b : doc->blocks()) {
+        if (b->source().find("After example") != std::string::npos) { found_after = true; }
+    }
+    EXPECT(found_after);
+
+    end_test();
+}
+
+static void test_parser_sidebar_block_closed() {
+    begin_test("parser: sidebar block properly closed by delimiter");
+
+    const std::string src =
+        "****\n"
+        "Sidebar content.\n"
+        "****\n"
+        "\n"
+        "Normal paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(doc->blocks().size() >= 2);
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Sidebar);
+    EXPECT(doc->blocks()[1]->context() == asciiquack::BlockContext::Paragraph);
+
+    end_test();
+}
+
+static void test_parser_quote_block_closed() {
+    begin_test("parser: quote block properly closed by delimiter");
+
+    const std::string src =
+        "[quote,Author Name]\n"
+        "____\n"
+        "Some quoted text.\n"
+        "____\n"
+        "\n"
+        "After quote.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(doc->blocks().size() >= 2);
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Quote);
+    EXPECT(doc->blocks()[1]->context() == asciiquack::BlockContext::Paragraph);
+
+    end_test();
+}
+
+static void test_html5_example_block() {
+    begin_test("html5: example block");
+    std::string out = html(
+        "====\n"
+        "Example content.\n"
+        "====\n"
+        "\n"
+        "After block.\n");
+    EXPECT_CONTAINS(out, "class=\"exampleblock\"");
+    EXPECT_CONTAINS(out, "Example content.");
+    EXPECT_CONTAINS(out, "After block.");
+
+    end_test();
+}
+
+static void test_html5_sidebar_block() {
+    begin_test("html5: sidebar block");
+    std::string out = html(
+        "****\n"
+        "Sidebar text.\n"
+        "****\n"
+        "\n"
+        "Regular text.\n");
+    EXPECT_CONTAINS(out, "class=\"sidebarblock\"");
+    EXPECT_CONTAINS(out, "Sidebar text.");
+    EXPECT_CONTAINS(out, "Regular text.");
+
+    end_test();
+}
+
+static void test_html5_admonition_block() {
+    begin_test("html5: admonition block (====)");
+    std::string out = html(
+        "[NOTE]\n"
+        "====\n"
+        "Compound note content.\n"
+        "====\n"
+        "\n"
+        "After admonition.\n");
+    EXPECT_CONTAINS(out, "admonitionblock note");
+    EXPECT_CONTAINS(out, "Compound note content.");
+    EXPECT_CONTAINS(out, "After admonition.");
+
+    end_test();
+}
+
 
 static void test_integration_sample() {
     begin_test("integration: sample.adoc");
@@ -795,6 +908,16 @@ int main(int argc, char* argv[]) {
     test_html5_attribute_ref();
     test_html5_image();
     test_html5_table();
+    test_html5_link_relative();
+
+    // Compound delimited block tests (regression for FIXME fix)
+    std::cout << "\nCompound delimited block tests:\n";
+    test_parser_example_block_closed();
+    test_parser_sidebar_block_closed();
+    test_parser_quote_block_closed();
+    test_html5_example_block();
+    test_html5_sidebar_block();
+    test_html5_admonition_block();
 
     // Integration
     std::cout << "\nIntegration tests:\n";
