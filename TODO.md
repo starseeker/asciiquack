@@ -94,6 +94,7 @@ Ruby feature set is still missing.
 | MathJax CDN loader when `:stem:` attribute is set | ✅ |
 | `doctype: manpage` title parsing (`manname`, `manvolnum`) | ✅ |
 | Man page backend (`-b manpage`, troff/groff output) | ✅ |
+| DocBook 5 backend (`-b docbook5`, XML output) | ✅ |
 | Table column spec: proportional, alignment, repeat, style | ✅ |
 | Logging: missing include file warning | ✅ |
 | Section nesting validation warning | ✅ |
@@ -171,21 +172,19 @@ but we want at least a basic, decent looking capability
       the data attributes that a client-side JS library expects.
     - Ruby source: `lib/asciidoctor/syntax_highlighter/`.
 
----
+21. ~~**DocBook 5 backend** (`-b docbook5`)~~ **Implemented** (`docbook5.hpp`)
+    - Produces valid DocBook 5.0 XML with `<article>` / `<book>` root.
+    - Covers: `<info>` (title, authors, date), `<section>` / `<chapter>`,
+      paragraphs, listing/literal blocks (`<programlisting>`,
+      `<literallayout>`), admonitions, `<itemizedlist>`, `<orderedlist>`,
+      `<variablelist>`, `<calloutlist>`, CALS tables, block images
+      (`<mediaobject>`), inline bold/italic/mono, and special-char escaping.
+    - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
 
-## Known Bugs / Limitations
+## Bugs
 
-| # | Description | File | Severity |
-|---|---|---|---|
-| 1 | ~~Compound delimited blocks (====, ****, ____) ran to EOF~~ | `parser.cpp` | **Fixed** |
-| 2 | ~~Setext title detection matched block-attribute lines (`[...]`)~~ | `parser.cpp` | **Fixed** |
-| 3 | ~~`link:` macro only matched `http(s)://` URLs~~ | `substitutors.hpp` | **Fixed** |
-| 4 | ~~Constrained inline-bold regex could produce false positives near URLs~~ | `substitutors.hpp` | **Fixed** |
 | 5 | `std::regex` is compiled on every call to `sub_quotes` etc. (static local works, but GCC's `<regex>` is slow – see performance section) | `substitutors.hpp` | Medium |
-| 6 | ~~Attribute entries with multi-line values (trailing `\`) silently discarded the continuation~~ | `parser.cpp` | **Fixed** |
-| 7 | ~~Description list term regex could match table separator rows~~ | `parser.cpp` | **Fixed** |
 | 8 | Section nesting deeper than one level beyond parent is silently accepted | `parser.cpp` | Low |
-| 9 | ~~Preamble `<div>` was emitted even when no sections followed~~ | `html5.hpp` | **Fixed** |
 
 ---
 
@@ -427,8 +426,8 @@ or rarely used.
       the data attributes that a client-side JS library expects.
     - Ruby source: `lib/asciidoctor/syntax_highlighter/`.
 
-21. **DocBook 5 backend** (`-b docbook5`)
-    - The CLI already falls back to html5 for unknown backends.
+21. ~~**DocBook 5 backend** (`-b docbook5`)~~ **Implemented** (`docbook5.hpp`)
+    - See the P3 section above for full implementation notes.
     - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
 
 22. **Man page backend** (`-b manpage`)
