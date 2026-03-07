@@ -7,10 +7,17 @@
 /// blocks, admonition blocks, inline bold / italic / monospace text, and
 /// basic horizontal rules.
 ///
+/// An optional TrueType body font can be specified via the `pdf-font` document
+/// attribute (absolute or relative path to a .ttf file).  When provided it is
+/// embedded in the PDF and used for all regular/body text; bold, italic and
+/// monospace text continue to use the PDF base-14 fonts.
+///
 /// Usage:
 ///   auto doc = Parser::parse_string(src, opts);
-///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc);      // Letter
-///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, true); // A4
+///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc);             // Letter, Helvetica
+///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, true);       // A4
+///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, false,
+///                               "/usr/share/fonts/myfont.ttf");  // custom body font
 
 #pragma once
 
@@ -247,6 +254,7 @@ public:
     static constexpr float LINE_RATIO = 1.35f;   ///< line height = size × ratio
 
     explicit PdfLayout(minipdf::Document& doc) : doc_(doc) {
+        body_font_ = doc.body_font().get();  // non-owning; Document owns the shared_ptr
         content_w_ = doc.page_width() - MARGIN_LEFT - MARGIN_RIGHT;
         new_page();
     }
@@ -318,13 +326,12 @@ public:
             float             total_w = 0.0f;
         };
 
-        float space_w = minipdf::text_width(" ", minipdf::FontStyle::Regular,
-                                             BODY_SIZE);
+        float space_w = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
         std::vector<Line> lines;
         lines.push_back({});
 
         for (const auto& w : words) {
-            float ww = minipdf::text_width(w.text, w.style, w.size);
+            float ww = tw(w.text, w.style, w.size);
             float need = lines.back().words.empty() ? ww
                          : lines.back().total_w + space_w + ww;
 
@@ -346,7 +353,7 @@ public:
                     x += space_w;
                 }
                 page_->place_text(x, cursor_y_, w.style, w.size, w.text);
-                x += minipdf::text_width(w.text, w.style, w.size);
+                x += tw(w.text, w.style, w.size);
                 first_word = false;
             }
             cursor_y_ -= line_h;
@@ -571,7 +578,7 @@ public:
         // Word count estimate
         int word_count = 1;
         for (char c : text) { if (c == ' ') { ++word_count; } }
-        float avg_word_w = minipdf::text_width("word ", minipdf::FontStyle::Regular, BODY_SIZE);
+        float avg_word_w = tw("word ", minipdf::FontStyle::Regular, BODY_SIZE);
         float est_lines = std::max(1.0f,
             std::ceil(static_cast<float>(word_count) * avg_word_w / avail));
         float bar_h = est_lines * lh + (attribution.empty() ? 0 : lh);
@@ -595,10 +602,25 @@ public:
     [[nodiscard]] float content_w() const { return content_w_; }
 
 private:
-    minipdf::Document& doc_;
-    minipdf::Page*     page_    = nullptr;
-    float              cursor_y_ = 0.0f;
-    float              content_w_ = 0.0f;
+    /// Measure the rendered width of @p text in the given style/size, using
+    /// the custom body font for Regular text when one is attached.
+    [[nodiscard]] float tw(const std::string& text,
+                           minipdf::FontStyle style, float size) const {
+        if (body_font_ && style == minipdf::FontStyle::Regular) {
+            float w = 0.0f;
+            for (char c : text) {
+                w += body_font_->advance_1000(static_cast<unsigned char>(c));
+            }
+            return w * size / 1000.0f;
+        }
+        return minipdf::text_width(text, style, size);
+    }
+
+    minipdf::Document&      doc_;
+    minipdf::Page*          page_      = nullptr;
+    float                   cursor_y_  = 0.0f;
+    float                   content_w_ = 0.0f;
+    const minipdf::TtfFont* body_font_ = nullptr;  ///< non-owning; may be nullptr
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -607,11 +629,13 @@ private:
 
 class PdfConverter {
 public:
-    explicit PdfConverter(bool a4 = false)
-        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter) {}
+    explicit PdfConverter(bool a4 = false, const std::string& font_path = "")
+        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter),
+          body_font_(minipdf::TtfFont::from_file(font_path)) {}
 
     [[nodiscard]] std::string convert(const Document& doc) const {
         minipdf::Document pdf(page_size_);
+        if (body_font_) { pdf.set_body_font(body_font_); }
         PdfLayout layout(pdf);
 
         render_document(doc, layout);
@@ -620,7 +644,8 @@ public:
     }
 
 private:
-    minipdf::PageSize page_size_;
+    minipdf::PageSize               page_size_;
+    std::shared_ptr<minipdf::TtfFont> body_font_;
 
     // ── Apply attribute substitution (document header and simple paragraphs)
     [[nodiscard]] static std::string attrs(const std::string& text,
@@ -874,10 +899,14 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Convert a parsed Document to a PDF byte string.
-/// @param a4  When true, use A4 page size; otherwise Letter (default).
+/// @param a4        When true, use A4 page size; otherwise Letter (default).
+/// @param font_path Optional path to a TrueType (.ttf) file to use as the
+///                  body text font.  When empty (default) or unreadable,
+///                  the PDF base-14 font Helvetica is used instead.
 [[nodiscard]] inline std::string convert_to_pdf(const Document& doc,
-                                                 bool a4 = false) {
-    return PdfConverter{a4}.convert(doc);
+                                                 bool a4 = false,
+                                                 const std::string& font_path = "") {
+    return PdfConverter{a4, font_path}.convert(doc);
 }
 
 } // namespace asciiquack

@@ -146,7 +146,11 @@ static int convert_one(const std::string&    source_path,
     } else if (params.backend == "pdf") {
         bool a4 = (params.attributes.count("pdf-page-size") &&
                    params.attributes.at("pdf-page-size") == "A4");
-        output = asciiquack::convert_to_pdf(*doc, a4);
+        std::string font_path;
+        if (params.attributes.count("pdf-font")) {
+            font_path = params.attributes.at("pdf-font");
+        }
+        output = asciiquack::convert_to_pdf(*doc, a4, font_path);
     } else {
         std::cerr << "asciiquack: backend '" << params.backend
                   << "' is not yet implemented; falling back to html5\n";

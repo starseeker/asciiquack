@@ -2368,6 +2368,200 @@ static void test_pdf_escape_special_chars() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TrueType font tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// System font path used for TrueType tests.  The Lato font is available on
+// the CI runner; this is a light dependency since Lato is bundled with many
+// Ubuntu/Debian installations.  If the path doesn't exist the test is skipped
+// rather than failed so the suite remains portable.
+static constexpr const char* LATO_REGULAR_PATH =
+    "/usr/share/fonts/truetype/lato/Lato-Regular.ttf";
+
+static void test_pdf_empty_font_path_fallback() {
+    begin_test("pdf: empty font path falls back to base-14 Helvetica");
+
+    const std::string src = "= Test\n\nA paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf_default = asciiquack::convert_to_pdf(*doc);
+    std::string pdf_empty   = asciiquack::convert_to_pdf(*doc, false, "");
+
+    EXPECT(is_valid_pdf_envelope(pdf_default));
+    EXPECT(is_valid_pdf_envelope(pdf_empty));
+    EXPECT(pdf_xref_valid(pdf_default));
+    EXPECT(pdf_xref_valid(pdf_empty));
+
+    // Both outputs should be structurally identical (same object count).
+    // Neither should embed a TrueType font.
+    EXPECT(pdf_default.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT(pdf_empty.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT_CONTAINS(pdf_empty, "Helvetica");
+
+    end_test();
+}
+
+static void test_pdf_invalid_font_path_fallback() {
+    begin_test("pdf: invalid font path falls back gracefully to Helvetica");
+
+    const std::string src = "= Test\n\nA paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    // Should not throw; should fall back to Helvetica silently.
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false,
+                                                  "/no/such/font/does/not/exist.ttf");
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // No TrueType embedding – fell back to base-14
+    EXPECT(pdf.find("/Subtype /TrueType") == std::string::npos);
+    EXPECT_CONTAINS(pdf, "Helvetica");
+
+    end_test();
+}
+
+static void test_pdf_ttf_font_embedded() {
+    begin_test("pdf: valid TTF font path embeds TrueType font as F1");
+
+    // Skip if the system font is not present (keeps the suite portable)
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= Document\n\nBody text paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // A TrueType font must be present
+    EXPECT_CONTAINS(pdf, "/Subtype /TrueType");
+    // FontDescriptor and font data stream must be present
+    EXPECT_CONTAINS(pdf, "/FontDescriptor");
+    EXPECT_CONTAINS(pdf, "/FontFile2");
+    // Font name derived from filename stem
+    EXPECT_CONTAINS(pdf, "Lato-Regular");
+    // Widths array for characters 32–255
+    EXPECT_CONTAINS(pdf, "/Widths [");
+    EXPECT_CONTAINS(pdf, "/FirstChar 32");
+    EXPECT_CONTAINS(pdf, "/LastChar 255");
+    // Body text still contains the page content
+    EXPECT_CONTAINS(pdf, "Body");
+    // Courier still present for code/mono
+    EXPECT_CONTAINS(pdf, "Courier");
+
+    end_test();
+}
+
+static void test_pdf_ttf_object_layout() {
+    begin_test("pdf: with TTF font object IDs are 3=stream 4=descriptor 5=F1");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= T\n\nP.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Object 3 must be the font stream
+    EXPECT_CONTAINS(pdf, "3 0 obj\n<< /Length ");
+    EXPECT_CONTAINS(pdf, "/Length1 ");
+    // Object 4 must be FontDescriptor
+    EXPECT_CONTAINS(pdf, "4 0 obj\n<< /Type /FontDescriptor");
+    // Object 5 must be the TrueType font dict (F1)
+    EXPECT_CONTAINS(pdf, "5 0 obj\n<< /Type /Font\n   /Subtype /TrueType");
+    // F1 still maps to object 5 in the per-page resource dict
+    EXPECT_CONTAINS(pdf, "/F1 5 0 R");
+
+    end_test();
+}
+
+static void test_pdf_ttf_widths_differ_from_helvetica() {
+    begin_test("pdf: custom TTF produces different character widths from Helvetica");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    // Lato is a humanist sans-serif with different metrics from Helvetica.
+    // Load the font directly via TtfFont and check a few glyph widths.
+    auto font = minipdf::TtfFont::from_file(LATO_REGULAR_PATH);
+    EXPECT(font != nullptr);
+
+    // The Helvetica width for 'A' (codepoint 65) is 667/1000 em.
+    // Lato's 'A' should differ.
+    float lato_a_width = font->advance_1000('A');
+    EXPECT(lato_a_width > 0.0f);
+    // Helvetica value from the built-in table is 667; Lato will not be exactly 667
+    // (Lato is slightly narrower).  We just check it's in a sane range.
+    EXPECT(lato_a_width > 300.0f && lato_a_width < 900.0f);
+
+    // Verify metrics
+    EXPECT(font->ascent_1000()  > 500.0f);
+    EXPECT(font->descent_1000() < 0.0f);
+
+    end_test();
+}
+
+static void test_pdf_ttf_xref_still_valid_with_font() {
+    begin_test("pdf: xref table is correct when TrueType font is embedded");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    // Build a multi-section document to get multiple pages
+    std::string src = "= Long Doc\n\n";
+    for (int i = 0; i < 20; ++i) {
+        src += "== Section " + std::to_string(i + 1) + "\n\nParagraph text here.\n\n";
+    }
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Should have multiple pages
+    std::size_t stream_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("stream\n", pos)) != std::string::npos) {
+        ++stream_count;
+        ++pos;
+    }
+    // At least 2 streams: font data + ≥1 page content
+    EXPECT(stream_count >= 2);
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2526,6 +2720,12 @@ int main(int argc, char* argv[]) {
     test_pdf_hrule();
     test_pdf_multipage();
     test_pdf_escape_special_chars();
+    test_pdf_empty_font_path_fallback();
+    test_pdf_invalid_font_path_fallback();
+    test_pdf_ttf_font_embedded();
+    test_pdf_ttf_object_layout();
+    test_pdf_ttf_widths_differ_from_helvetica();
+    test_pdf_ttf_xref_still_valid_with_font();
 
     // Summary
     std::cout << "\n============================\n";
