@@ -1038,6 +1038,8 @@ void Parser::parse_blocks_until(Reader& reader, Block& parent,
         parse_next_block(reader, parent);
     }
     // EOF before finding terminator – treat as unclosed block (Ruby does the same)
+    std::cerr << "asciiquack: WARNING: unclosed block: expected '" << terminator
+              << "' before end of document\n";
 }
 
 bool Parser::parse_next_block(Reader& reader, Block& parent) {
