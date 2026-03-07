@@ -2053,6 +2053,47 @@ static void test_manpage_backend_listing() {
     end_test();
 }
 
+static void test_manpage_table() {
+    begin_test("manpage: table uses tbl(1) .TS/.TE macros");
+
+    const std::string src =
+        "= test(1)\n"
+        "\n"
+        "== Description\n"
+        "\n"
+        "[cols=\"1,1\"]\n"
+        "|===\n"
+        "| Header A | Header B\n"
+        "\n"
+        "| Cell 1 | Cell 2\n"
+        "| Cell 3 | Cell 4\n"
+        "|===\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+
+    // tbl(1) preprocessor activation comment must be present
+    EXPECT_CONTAINS(out, "'\\\" t");
+    // Table delimiters
+    EXPECT_CONTAINS(out, ".TS");
+    EXPECT_CONTAINS(out, ".TE");
+    // allbox draws borders; tab(:) sets the cell separator
+    EXPECT_CONTAINS(out, "allbox");
+    EXPECT_CONTAINS(out, "tab(:)");
+    // Cell delimiters for long-text cells
+    EXPECT_CONTAINS(out, "T{");
+    EXPECT_CONTAINS(out, "T}");
+    // Header row separator
+    EXPECT_CONTAINS(out, ".T&");
+    // Cell content
+    EXPECT_CONTAINS(out, "Header A");
+    EXPECT_CONTAINS(out, "Cell 1");
+
+    end_test();
+}
+
 static void test_table_col_alignment() {
     begin_test("html5: table cols alignment prefix (< ^ >)");
 
@@ -3641,6 +3682,39 @@ static void test_minipdf_png_from_file_loads() {
 }
 #endif // MINIPDF_USE_ZLIB
 
+static void test_pdf_table() {
+    begin_test("pdf: table renders cell content with valid PDF structure");
+
+    const std::string src =
+        "= Document\n"
+        "\n"
+        "[cols=\"1,2\"]\n"
+        "|===\n"
+        "| Name | Description\n"
+        "\n"
+        "| Alpha | First item in the list\n"
+        "| Beta  | Second item with *bold* text\n"
+        "| Gamma | Third item with `mono` text\n"
+        "|===\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Header row content
+    EXPECT_CONTAINS(pdf, "Name");
+    EXPECT_CONTAINS(pdf, "Description");
+    // Body row content
+    EXPECT_CONTAINS(pdf, "Alpha");
+    EXPECT_CONTAINS(pdf, "First");
+    EXPECT_CONTAINS(pdf, "Beta");
+    EXPECT_CONTAINS(pdf, "Gamma");
+
+    end_test();
+}
+
 static void test_minipdf_jpeg_from_file_loads() {
     begin_test("minipdf: PdfImage::from_jpeg_file returns nullptr for non-JPEG");
 
@@ -3813,6 +3887,7 @@ int main(int argc, char* argv[]) {
     test_manpage_backend_basic();
     test_manpage_backend_bold_italic();
     test_manpage_backend_listing();
+    test_manpage_table();
     test_table_col_alignment();
     test_table_col_repeat();
     test_table_col_style_h();
@@ -3870,6 +3945,7 @@ int main(int argc, char* argv[]) {
     test_minipdf_png_from_file_loads();
 #endif
     test_minipdf_jpeg_from_file_loads();
+    test_pdf_table();
     test_minipdf_png_missing_returns_nullptr();
 
     // Summary
