@@ -1,0 +1,813 @@
+/// @file test_asciiquack.cpp
+/// @brief C++ unit tests for the asciiquack AsciiDoc processor.
+///
+/// Tests are self-contained: no external framework is required.
+/// Each test is a function that asserts a condition; on failure it prints
+/// a message and increments the failure counter.
+///
+/// Run with:   ./asciiquack_tests
+/// CMake:      ctest  (via `add_test`)
+
+#include "document.hpp"
+#include "html5.hpp"
+#include "parser.hpp"
+#include "reader.hpp"
+#include "substitutors.hpp"
+
+#include <cassert>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Minimal test harness
+// ─────────────────────────────────────────────────────────────────────────────
+
+static int  g_total   = 0;
+static int  g_failed  = 0;
+static bool g_verbose = false;
+
+#define EXPECT(cond)                                                        \
+    do {                                                                    \
+        ++g_total;                                                          \
+        if (!(cond)) {                                                      \
+            ++g_failed;                                                     \
+            std::cerr << "  FAIL: " << __FILE__ << ":" << __LINE__         \
+                      << "  " << #cond << "\n";                             \
+        } else if (g_verbose) {                                             \
+            std::cout << "  PASS: " << #cond << "\n";                      \
+        }                                                                   \
+    } while (false)
+
+#define EXPECT_EQ(a, b)                                                     \
+    do {                                                                    \
+        ++g_total;                                                          \
+        if ((a) != (b)) {                                                   \
+            ++g_failed;                                                     \
+            std::cerr << "  FAIL: " << __FILE__ << ":" << __LINE__         \
+                      << "  expected\n    [" << (a)                         \
+                      << "]\n  got\n    [" << (b) << "]\n";                 \
+        } else if (g_verbose) {                                             \
+            std::cout << "  PASS: " << #a << " == " << #b << "\n";         \
+        }                                                                   \
+    } while (false)
+
+#define EXPECT_CONTAINS(haystack, needle)                                   \
+    do {                                                                    \
+        ++g_total;                                                          \
+        if ((haystack).find(needle) == std::string::npos) {                 \
+            ++g_failed;                                                     \
+            std::cerr << "  FAIL: " << __FILE__ << ":" << __LINE__         \
+                      << "  expected to find [" << (needle)                 \
+                      << "] in output\n";                                   \
+        } else if (g_verbose) {                                             \
+            std::cout << "  PASS: output contains [" << (needle) << "]\n"; \
+        }                                                                   \
+    } while (false)
+
+#define EXPECT_NOT_CONTAINS(haystack, needle)                               \
+    do {                                                                    \
+        ++g_total;                                                          \
+        if ((haystack).find(needle) != std::string::npos) {                 \
+            ++g_failed;                                                     \
+            std::cerr << "  FAIL: " << __FILE__ << ":" << __LINE__         \
+                      << "  expected NOT to find [" << (needle)             \
+                      << "] in output\n";                                   \
+        } else if (g_verbose) {                                             \
+            std::cout << "  PASS: output lacks [" << (needle) << "]\n";    \
+        }                                                                   \
+    } while (false)
+
+static void begin_test(const char* name) {
+    std::cout << "  " << name << " ... " << std::flush;
+}
+static void end_test() {
+    std::cout << "ok\n";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: parse a string and return the HTML output
+// ─────────────────────────────────────────────────────────────────────────────
+
+static std::string html(const std::string& asciidoc,
+                        asciiquack::ParseOptions opts = {}) {
+    opts.safe_mode = asciiquack::SafeMode::Unsafe;
+    auto doc = asciiquack::Parser::parse_string(asciidoc, opts);
+    return asciiquack::convert_to_html5(*doc);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reader tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_reader_basic() {
+    begin_test("reader: basic line reading");
+
+    asciiquack::Reader r("line1\nline2\nline3\n");
+    EXPECT(r.has_more_lines());
+
+    auto l1 = r.read_line();
+    EXPECT(l1.has_value());
+    EXPECT_EQ(*l1, "line1");
+
+    EXPECT_EQ(r.lineno(), 2);
+
+    auto l2 = r.peek_line();
+    EXPECT(l2.has_value());
+    EXPECT_EQ(std::string(*l2), "line2");
+
+    // peek does not consume
+    EXPECT_EQ(std::string(*r.peek_line()), "line2");
+
+    auto l2r = r.read_line();
+    EXPECT_EQ(*l2r, "line2");
+
+    r.skip_line();  // line3
+    EXPECT(!r.has_more_lines());
+    EXPECT(!r.read_line().has_value());
+
+    end_test();
+}
+
+static void test_reader_crlf() {
+    begin_test("reader: CRLF line endings");
+
+    asciiquack::Reader r("a\r\nb\r\nc\r\n");
+    EXPECT_EQ(*r.read_line(), "a");
+    EXPECT_EQ(*r.read_line(), "b");
+    EXPECT_EQ(*r.read_line(), "c");
+
+    end_test();
+}
+
+static void test_reader_unshift() {
+    begin_test("reader: unshift_line");
+
+    asciiquack::Reader r("b\n");
+    r.unshift_line("a");
+    EXPECT_EQ(*r.read_line(), "a");
+    EXPECT_EQ(*r.read_line(), "b");
+
+    end_test();
+}
+
+static void test_reader_skip_blank() {
+    begin_test("reader: skip_blank_lines");
+
+    asciiquack::Reader r("\n  \n\nfoo\n");
+    int skipped = r.skip_blank_lines();
+    EXPECT(skipped >= 2);
+    EXPECT_EQ(*r.read_line(), "foo");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Substitutors tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_sub_specialchars() {
+    begin_test("substitutors: escape HTML special chars");
+
+    EXPECT_EQ(asciiquack::sub_specialchars("a & b"), "a &amp; b");
+    EXPECT_EQ(asciiquack::sub_specialchars("<tag>"),  "&lt;tag&gt;");
+    EXPECT_EQ(asciiquack::sub_specialchars("a>b"),    "a&gt;b");
+    EXPECT_EQ(asciiquack::sub_specialchars("plain"),  "plain");
+
+    end_test();
+}
+
+static void test_sub_replacements() {
+    begin_test("substitutors: typographic replacements");
+
+    std::string em = asciiquack::sub_replacements("a -- b");
+    EXPECT(em.find("&#8212;") != std::string::npos);
+
+    std::string ellipsis = asciiquack::sub_replacements("...");
+    EXPECT(ellipsis.find("&#8230;") != std::string::npos);
+
+    std::string copyright = asciiquack::sub_replacements("(C)");
+    EXPECT(copyright.find("&#169;") != std::string::npos);
+
+    std::string tm = asciiquack::sub_replacements("(TM)");
+    EXPECT(tm.find("&#8482;") != std::string::npos);
+
+    end_test();
+}
+
+static void test_sub_attributes() {
+    begin_test("substitutors: attribute expansion");
+
+    std::unordered_map<std::string, std::string> attrs = {
+        {"project", "asciiquack"},
+        {"version", "1.0"},
+    };
+
+    EXPECT_EQ(asciiquack::sub_attributes("name: {project}", attrs), "name: asciiquack");
+    EXPECT_EQ(asciiquack::sub_attributes("{version}", attrs), "1.0");
+    // Unknown attribute is left as-is
+    EXPECT_EQ(asciiquack::sub_attributes("{unknown}", attrs), "{unknown}");
+    // No brace → fast path
+    EXPECT_EQ(asciiquack::sub_attributes("hello", attrs), "hello");
+
+    end_test();
+}
+
+static void test_generate_id() {
+    begin_test("substitutors: generate_id");
+
+    EXPECT_EQ(asciiquack::generate_id("Hello World"),    "_hello_world");
+    EXPECT_EQ(asciiquack::generate_id("Section A"),      "_section_a");
+    EXPECT_EQ(asciiquack::generate_id("C++ is great!"),  "_c_is_great");
+    EXPECT_EQ(asciiquack::generate_id("simple"),         "_simple");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Parser tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_parser_section_level() {
+    begin_test("parser: section_level()");
+
+    EXPECT_EQ(asciiquack::Parser::section_level("= Title"),      0);
+    EXPECT_EQ(asciiquack::Parser::section_level("== Section"),   1);
+    EXPECT_EQ(asciiquack::Parser::section_level("=== Sub"),      2);
+    EXPECT_EQ(asciiquack::Parser::section_level("==== Sub2"),    3);
+    EXPECT_EQ(asciiquack::Parser::section_level("===== Sub3"),   4);
+    EXPECT_EQ(asciiquack::Parser::section_level("====== Sub4"),  5);
+    EXPECT_EQ(asciiquack::Parser::section_level("======= Too many"), -1);
+    EXPECT_EQ(asciiquack::Parser::section_level("not a title"),  -1);
+    EXPECT_EQ(asciiquack::Parser::section_level(""),             -1);
+    EXPECT_EQ(asciiquack::Parser::section_level("==no space"),   -1);
+
+    end_test();
+}
+
+static void test_parser_section_title_text() {
+    begin_test("parser: section_title_text()");
+
+    EXPECT_EQ(asciiquack::Parser::section_title_text("= My Title"),    "My Title");
+    EXPECT_EQ(asciiquack::Parser::section_title_text("== Section A"),  "Section A");
+    // Trailing markers stripped
+    EXPECT_EQ(asciiquack::Parser::section_title_text("== Foo =="),     "Foo");
+
+    end_test();
+}
+
+static void test_parser_empty_document() {
+    begin_test("parser: empty document");
+
+    auto doc = asciiquack::Parser::parse_string("");
+    EXPECT(doc != nullptr);
+    EXPECT(doc->doctitle().empty());
+    EXPECT(doc->blocks().empty());
+
+    end_test();
+}
+
+static void test_parser_document_title() {
+    begin_test("parser: document title");
+
+    auto doc = asciiquack::Parser::parse_string("= My Title\n");
+    EXPECT_EQ(doc->doctitle(), "My Title");
+
+    end_test();
+}
+
+static void test_parser_document_header_full() {
+    begin_test("parser: full document header");
+
+    const std::string src =
+        "= Document Title\n"
+        "John Doe <john@example.com>\n"
+        "v1.2, 2024-06-01: Initial release\n"
+        ":myattr: hello\n"
+        "\n"
+        "Body paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->doctitle(), "Document Title");
+    EXPECT(!doc->authors().empty());
+    EXPECT_EQ(doc->authors()[0].firstname, "John");
+    EXPECT_EQ(doc->authors()[0].email,     "john@example.com");
+    EXPECT_EQ(doc->revision().number,      "1.2");
+    EXPECT_EQ(doc->revision().date,        "2024-06-01");
+    EXPECT_EQ(doc->attr("myattr"),         "hello");
+    EXPECT(!doc->blocks().empty());
+
+    end_test();
+}
+
+static void test_parser_paragraph() {
+    begin_test("parser: paragraph");
+
+    const std::string src = "Hello, world.\n\nSecond paragraph.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->blocks().size(), std::size_t{2});
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Paragraph);
+    EXPECT_EQ(doc->blocks()[0]->source(), "Hello, world.");
+
+    end_test();
+}
+
+static void test_parser_sections() {
+    begin_test("parser: sections");
+
+    const std::string src =
+        "= Document\n\n"
+        "Preamble text.\n\n"
+        "== Section A\n\n"
+        "Section A content.\n\n"
+        "=== Subsection\n\n"
+        "Subsection content.\n\n"
+        "== Section B\n\n"
+        "Section B content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->doctitle(), "Document");
+
+    // There should be a preamble paragraph and 2 top-level sections
+    int sections = 0;
+    int paragraphs = 0;
+    for (const auto& b : doc->blocks()) {
+        if (b->context() == asciiquack::BlockContext::Section) { ++sections; }
+        if (b->context() == asciiquack::BlockContext::Paragraph) { ++paragraphs; }
+    }
+    EXPECT(sections >= 2);
+    EXPECT(paragraphs >= 1);
+
+    end_test();
+}
+
+static void test_parser_attribute_entry() {
+    begin_test("parser: attribute entry in body");
+
+    const std::string src =
+        ":greeting: Hello\n\n"
+        "Paragraph with {greeting}.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->attr("greeting"), "Hello");
+
+    end_test();
+}
+
+static void test_parser_listing_block() {
+    begin_test("parser: listing block");
+
+    const std::string src =
+        "[source,cpp]\n"
+        "----\n"
+        "int main() { return 0; }\n"
+        "----\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(!doc->blocks().empty());
+    auto& b = *doc->blocks()[0];
+    EXPECT(b.context() == asciiquack::BlockContext::Listing);
+    EXPECT(b.source().find("int main") != std::string::npos);
+
+    end_test();
+}
+
+static void test_parser_unordered_list() {
+    begin_test("parser: unordered list");
+
+    const std::string src =
+        "* Item 1\n"
+        "* Item 2\n"
+        "* Item 3\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(!doc->blocks().empty());
+    auto& b = *doc->blocks()[0];
+    EXPECT(b.context() == asciiquack::BlockContext::Ulist);
+
+    const auto& lst = dynamic_cast<const asciiquack::List&>(b);
+    EXPECT_EQ(lst.items().size(), std::size_t{3});
+    EXPECT_EQ(lst.items()[0]->source(), "Item 1");
+
+    end_test();
+}
+
+static void test_parser_ordered_list() {
+    begin_test("parser: ordered list");
+
+    const std::string src =
+        ". First\n"
+        ". Second\n"
+        ". Third\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(!doc->blocks().empty());
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Olist);
+
+    const auto& lst = dynamic_cast<const asciiquack::List&>(*doc->blocks()[0]);
+    EXPECT_EQ(lst.items().size(), std::size_t{3});
+    EXPECT_EQ(lst.items()[1]->source(), "Second");
+
+    end_test();
+}
+
+static void test_parser_admonition_paragraph() {
+    begin_test("parser: admonition paragraph");
+
+    const std::string src = "NOTE: Pay attention.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(!doc->blocks().empty());
+    EXPECT(doc->blocks()[0]->context() == asciiquack::BlockContext::Admonition);
+    EXPECT_EQ(doc->blocks()[0]->attr("name"), "note");
+
+    end_test();
+}
+
+static void test_parser_block_title() {
+    begin_test("parser: block title (.Title)");
+
+    const std::string src =
+        ".My Code Block\n"
+        "----\n"
+        "code here\n"
+        "----\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT(!doc->blocks().empty());
+    EXPECT_EQ(doc->blocks()[0]->title(), "My Code Block");
+
+    end_test();
+}
+
+static void test_parser_thematic_break() {
+    begin_test("parser: thematic break (''')");
+
+    const std::string src = "para\n\n'''\n\npara2\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    bool found = false;
+    for (const auto& b : doc->blocks()) {
+        if (b->context() == asciiquack::BlockContext::ThematicBreak) { found = true; }
+    }
+    EXPECT(found);
+
+    end_test();
+}
+
+static void test_parser_comment_line() {
+    begin_test("parser: comment line (//)");
+
+    const std::string src =
+        "// This should not appear in the output\n"
+        "Visible paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    // Only the paragraph, not the comment
+    EXPECT(!doc->blocks().empty());
+    bool has_comment = false;
+    for (const auto& b : doc->blocks()) {
+        if (b->source().find("should not appear") != std::string::npos) {
+            has_comment = true;
+        }
+    }
+    EXPECT(!has_comment);
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML5 converter tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_html5_doctype() {
+    begin_test("html5: DOCTYPE present");
+    EXPECT_CONTAINS(html("= Title\n"), "<!DOCTYPE html>");
+    end_test();
+}
+
+static void test_html5_title() {
+    begin_test("html5: document title in <title> and <h1>");
+    std::string out = html("= My Document\n");
+    EXPECT_CONTAINS(out, "<title>My Document</title>");
+    EXPECT_CONTAINS(out, "<h1>My Document</h1>");
+    end_test();
+}
+
+static void test_html5_author() {
+    begin_test("html5: author in header");
+    std::string out = html("= Title\nJane Smith <jane@example.com>\n");
+    EXPECT_CONTAINS(out, "Jane Smith");
+    EXPECT_CONTAINS(out, "jane@example.com");
+    end_test();
+}
+
+static void test_html5_paragraph() {
+    begin_test("html5: paragraph");
+    std::string out = html("Hello world.\n");
+    EXPECT_CONTAINS(out, "<div class=\"paragraph\">");
+    EXPECT_CONTAINS(out, "<p>Hello world.</p>");
+    end_test();
+}
+
+static void test_html5_section() {
+    begin_test("html5: section headings");
+    std::string out = html("= Doc\n\n== Section One\n\nText.\n");
+    EXPECT_CONTAINS(out, "class=\"sect1\"");
+    EXPECT_CONTAINS(out, "<h2");
+    EXPECT_CONTAINS(out, "Section One");
+    end_test();
+}
+
+static void test_html5_section_id() {
+    begin_test("html5: section id generated from title");
+    std::string out = html("= Doc\n\n== My Section\n\nText.\n");
+    EXPECT_CONTAINS(out, "id=\"_my_section\"");
+    end_test();
+}
+
+static void test_html5_listing_block() {
+    begin_test("html5: listing block");
+    std::string out = html(
+        "[source,python]\n"
+        "----\n"
+        "print('hello')\n"
+        "----\n");
+    EXPECT_CONTAINS(out, "class=\"listingblock\"");
+    EXPECT_CONTAINS(out, "language-python");
+    EXPECT_CONTAINS(out, "print(");
+    end_test();
+}
+
+static void test_html5_literal_block() {
+    begin_test("html5: literal block");
+    std::string out = html(
+        "....\n"
+        "literal text here\n"
+        "....\n");
+    EXPECT_CONTAINS(out, "class=\"literalblock\"");
+    EXPECT_CONTAINS(out, "literal text here");
+    end_test();
+}
+
+static void test_html5_ulist() {
+    begin_test("html5: unordered list");
+    std::string out = html("* One\n* Two\n* Three\n");
+    EXPECT_CONTAINS(out, "<ul>");
+    EXPECT_CONTAINS(out, "<li>");
+    EXPECT_CONTAINS(out, "One");
+    EXPECT_CONTAINS(out, "Two");
+    end_test();
+}
+
+static void test_html5_olist() {
+    begin_test("html5: ordered list");
+    std::string out = html(". First\n. Second\n");
+    EXPECT_CONTAINS(out, "<ol");
+    EXPECT_CONTAINS(out, "First");
+    EXPECT_CONTAINS(out, "Second");
+    end_test();
+}
+
+static void test_html5_admonition() {
+    begin_test("html5: admonition paragraph");
+    std::string out = html("TIP: Use asciiquack!\n");
+    EXPECT_CONTAINS(out, "admonitionblock tip");
+    EXPECT_CONTAINS(out, "Use asciiquack");
+    end_test();
+}
+
+static void test_html5_special_chars() {
+    begin_test("html5: special characters escaped");
+    std::string out = html("a < b & c > d\n");
+    EXPECT_CONTAINS(out, "&lt;");
+    EXPECT_CONTAINS(out, "&amp;");
+    EXPECT_CONTAINS(out, "&gt;");
+    EXPECT_NOT_CONTAINS(out, "a < b");
+    end_test();
+}
+
+static void test_html5_inline_bold() {
+    begin_test("html5: inline bold");
+    std::string out = html("Some *bold* text.\n");
+    EXPECT_CONTAINS(out, "<strong>bold</strong>");
+    end_test();
+}
+
+static void test_html5_inline_italic() {
+    begin_test("html5: inline italic");
+    std::string out = html("Some _italic_ text.\n");
+    EXPECT_CONTAINS(out, "<em>italic</em>");
+    end_test();
+}
+
+static void test_html5_inline_monospace() {
+    begin_test("html5: inline monospace");
+    std::string out = html("Use `code` here.\n");
+    EXPECT_CONTAINS(out, "<code>code</code>");
+    end_test();
+}
+
+static void test_html5_embedded() {
+    begin_test("html5: embedded (no header/footer)");
+    asciiquack::ParseOptions opts;
+    opts.safe_mode = asciiquack::SafeMode::Unsafe;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string("= Title\n\nParagraph.\n", opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_NOT_CONTAINS(out, "<!DOCTYPE html>");
+    EXPECT_NOT_CONTAINS(out, "<html");
+    EXPECT_CONTAINS(out, "<div class=\"paragraph\">");
+    end_test();
+}
+
+static void test_html5_horizontal_rule() {
+    begin_test("html5: horizontal rule");
+    std::string out = html("'''\n");
+    EXPECT_CONTAINS(out, "<hr>");
+    end_test();
+}
+
+static void test_html5_attribute_ref() {
+    begin_test("html5: attribute reference in paragraph");
+    std::string out = html(":greeting: Hello\n\n{greeting}, world!\n");
+    EXPECT_CONTAINS(out, "Hello, world!");
+    end_test();
+}
+
+static void test_html5_image() {
+    begin_test("html5: block image macro");
+    std::string out = html("image::photo.png[A photo]\n");
+    EXPECT_CONTAINS(out, "<img");
+    EXPECT_CONTAINS(out, "photo.png");
+    EXPECT_CONTAINS(out, "A photo");
+    end_test();
+}
+
+static void test_html5_table() {
+    begin_test("html5: basic table");
+    std::string out = html("|===\n|Col1 |Col2\n|a |b\n|===\n");
+    EXPECT_CONTAINS(out, "<table");
+    EXPECT_CONTAINS(out, "<td");
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integration tests  (full sample.adoc)
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_integration_sample() {
+    begin_test("integration: sample.adoc");
+
+    const std::string src =
+        "Document Title\n"
+        "==============\n"
+        "Doc Writer <thedoc@asciidoctor.org>\n"
+        ":idprefix: id_\n"
+        "\n"
+        "Preamble paragraph.\n"
+        "\n"
+        "NOTE: This is test, only a test.\n"
+        "\n"
+        "== Section A\n"
+        "\n"
+        "*Section A* paragraph.\n"
+        "\n"
+        "=== Section A Subsection\n"
+        "\n"
+        "*Section A* 'subsection' paragraph.\n"
+        "\n"
+        "== Section B\n"
+        "\n"
+        "*Section B* paragraph.\n"
+        "\n"
+        ".Section B list\n"
+        "* Item 1\n"
+        "* Item 2\n"
+        "* Item 3\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->doctitle(), "Document Title");
+    EXPECT(!doc->authors().empty());
+    EXPECT_EQ(doc->authors()[0].firstname, "Doc");
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<!DOCTYPE html>");
+    EXPECT_CONTAINS(out, "Document Title");
+    EXPECT_CONTAINS(out, "Section A");
+    EXPECT_CONTAINS(out, "Section B");
+    EXPECT_CONTAINS(out, "Preamble paragraph");
+    EXPECT_CONTAINS(out, "admonitionblock note");
+    EXPECT_CONTAINS(out, "<ul>");
+    EXPECT_CONTAINS(out, "Item 1");
+
+    end_test();
+}
+
+static void test_integration_basic() {
+    begin_test("integration: basic.adoc");
+
+    const std::string src =
+        "= Document Title\n"
+        "Doc Writer <doc.writer@asciidoc.org>\n"
+        "v1.0, 2013-01-01\n"
+        "\n"
+        "Body content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->doctitle(), "Document Title");
+    EXPECT_EQ(doc->revision().number, "1.0");
+    EXPECT_EQ(doc->revision().date,   "2013-01-01");
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Document Title");
+    EXPECT_CONTAINS(out, "Body content.");
+    EXPECT_CONTAINS(out, "version 1.0");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// main
+// ─────────────────────────────────────────────────────────────────────────────
+
+int main(int argc, char* argv[]) {
+    // Check for -v flag
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
+            g_verbose = true;
+        }
+    }
+
+    std::cout << "Running asciiquack C++ tests\n";
+    std::cout << "============================\n\n";
+
+    // Reader
+    std::cout << "Reader tests:\n";
+    test_reader_basic();
+    test_reader_crlf();
+    test_reader_unshift();
+    test_reader_skip_blank();
+
+    // Substitutors
+    std::cout << "\nSubstitutor tests:\n";
+    test_sub_specialchars();
+    test_sub_replacements();
+    test_sub_attributes();
+    test_generate_id();
+
+    // Parser
+    std::cout << "\nParser tests:\n";
+    test_parser_section_level();
+    test_parser_section_title_text();
+    test_parser_empty_document();
+    test_parser_document_title();
+    test_parser_document_header_full();
+    test_parser_paragraph();
+    test_parser_sections();
+    test_parser_attribute_entry();
+    test_parser_listing_block();
+    test_parser_unordered_list();
+    test_parser_ordered_list();
+    test_parser_admonition_paragraph();
+    test_parser_block_title();
+    test_parser_thematic_break();
+    test_parser_comment_line();
+
+    // HTML5 converter
+    std::cout << "\nHTML5 converter tests:\n";
+    test_html5_doctype();
+    test_html5_title();
+    test_html5_author();
+    test_html5_paragraph();
+    test_html5_section();
+    test_html5_section_id();
+    test_html5_listing_block();
+    test_html5_literal_block();
+    test_html5_ulist();
+    test_html5_olist();
+    test_html5_admonition();
+    test_html5_special_chars();
+    test_html5_inline_bold();
+    test_html5_inline_italic();
+    test_html5_inline_monospace();
+    test_html5_embedded();
+    test_html5_horizontal_rule();
+    test_html5_attribute_ref();
+    test_html5_image();
+    test_html5_table();
+
+    // Integration
+    std::cout << "\nIntegration tests:\n";
+    test_integration_sample();
+    test_integration_basic();
+
+    // Summary
+    std::cout << "\n============================\n";
+    if (g_failed == 0) {
+        std::cout << "All " << g_total << " tests passed.\n";
+        return 0;
+    } else {
+        std::cout << g_failed << " of " << g_total << " tests FAILED.\n";
+        return 1;
+    }
+}
