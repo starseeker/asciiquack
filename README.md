@@ -1,10 +1,18 @@
 ```
-== asciiquack
+= asciiquack
+:doctype: duck
+:quack: true
 
-   __
-<(o )===
- ( ._> //
-  `---'
+// parsing...
+
+    ==(o )===
+      ( ._> ::
+      `---'//
+
+----
+quack:: true
+duck:: ascii
+----
 ```
 
 A C++17 translation of asciidoctor.
