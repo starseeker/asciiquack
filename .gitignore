@@ -24,3 +24,4 @@ Makefile
 *.dll
 *.exe
 asciiquack
+build_sys/

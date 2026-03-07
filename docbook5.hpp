@@ -28,8 +28,8 @@
 
 #include "document.hpp"
 #include "substitutors.hpp"
+#include "outbuf.hpp"
 
-#include <sstream>
 #include <string>
 
 namespace asciiquack {
@@ -44,9 +44,9 @@ public:
 
     /// Convert a parsed Document to a DocBook 5 XML string.
     [[nodiscard]] std::string convert(const Document& doc) const {
-        std::ostringstream out;
+        OutputBuffer out;
         convert_document(doc, out);
-        return out.str();
+        return out.release();
     }
 
 private:
@@ -229,7 +229,7 @@ private:
 
     // ── Document structure ────────────────────────────────────────────────────
 
-    void convert_document(const Document& doc, std::ostringstream& out) const {
+    void convert_document(const Document& doc, OutputBuffer& out) const {
         const std::string& doctype = doc.doctype();
         const std::string  root    = (doctype == "book") ? "book" : "article";
 
@@ -286,7 +286,7 @@ private:
     }
 
     void convert_block(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         switch (block.context()) {
             case BlockContext::Section:
                 convert_section(dynamic_cast<const Section&>(block), doc, out);
@@ -368,7 +368,7 @@ private:
     }
 
     void convert_section(const Section& sect, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         // In book doctype: level-1 sections become <chapter>, others <section>
         const std::string& doctype = doc.doctype();
         std::string elem;
@@ -393,7 +393,7 @@ private:
     }
 
     void convert_paragraph(const Block& block, const Document& doc,
-                            std::ostringstream& out) const {
+                            OutputBuffer& out) const {
         if (block.has_title()) {
             out << "<formalpara>\n";
             out << "<title>" << xml_escape(block.title()) << "</title>\n";
@@ -405,7 +405,7 @@ private:
     }
 
     void convert_listing(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         // Language: explicit "language" attr takes precedence, then positional attr 2
         const std::string& lang_explicit = block.attr("language", "");
         const std::string& lang_pos2     = block.attr("2", "");
@@ -430,7 +430,7 @@ private:
     }
 
     void convert_literal(const Block& block, const Document&,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         const bool has_title = block.has_title();
         if (has_title) {
             out << "<example>\n";
@@ -443,7 +443,7 @@ private:
     }
 
     void convert_example(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         out << "<example>\n";
         if (block.has_title()) {
             out << "<title>" << xml_escape(block.title()) << "</title>\n";
@@ -455,7 +455,7 @@ private:
     }
 
     void convert_quote(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         out << "<blockquote>\n";
         if (block.has_title()) {
             out << "<title>" << xml_escape(block.title()) << "</title>\n";
@@ -479,7 +479,7 @@ private:
     }
 
     void convert_verse(const Block& block, const Document&,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         out << "<blockquote>\n";
         if (block.has_title()) {
             out << "<title>" << xml_escape(block.title()) << "</title>\n";
@@ -497,7 +497,7 @@ private:
     }
 
     void convert_sidebar(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         out << "<sidebar>\n";
         if (block.has_title()) {
             out << "<title>" << xml_escape(block.title()) << "</title>\n";
@@ -509,7 +509,7 @@ private:
     }
 
     void convert_admonition(const Block& block, const Document& doc,
-                             std::ostringstream& out) const {
+                             OutputBuffer& out) const {
         const std::string  elem = admonition_elem(block.attr("name", "note"));
         out << "<" << elem << ">\n";
         if (block.has_title()) {
@@ -526,7 +526,7 @@ private:
     }
 
     void convert_ulist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         out << "<itemizedlist>\n";
         if (list.has_title()) {
             out << "<title>" << xml_escape(list.title()) << "</title>\n";
@@ -545,7 +545,7 @@ private:
     }
 
     void convert_olist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         std::string numeration;
         switch (list.ordered_style()) {
             case OrderedListStyle::Arabic:     numeration = "arabic";     break;
@@ -577,7 +577,7 @@ private:
     }
 
     void convert_dlist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         out << "<variablelist>\n";
         if (list.has_title()) {
             out << "<title>" << xml_escape(list.title()) << "</title>\n";
@@ -599,7 +599,7 @@ private:
     }
 
     void convert_colist(const List& list, const Document& doc,
-                        std::ostringstream& out) const {
+                        OutputBuffer& out) const {
         out << "<calloutlist>\n";
         if (list.has_title()) {
             out << "<title>" << xml_escape(list.title()) << "</title>\n";
@@ -615,7 +615,7 @@ private:
     }
 
     void convert_table(const Table& table, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const bool has_title = table.has_title();
         const auto& specs    = table.column_specs();
 
@@ -677,7 +677,7 @@ private:
     }
 
     void convert_table_row(const TableRow& row, const Document& doc,
-                            std::ostringstream& out) const {
+                            OutputBuffer& out) const {
         out << "<row>\n";
         for (const auto& cell : row.cells()) {
             out << "<entry>" << inline_subs(cell->source(), doc) << "</entry>\n";
@@ -686,7 +686,7 @@ private:
     }
 
     void convert_image(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& target = block.attr("target", "");
         const std::string& alt    = block.attr("alt",    "");
         const bool has_title      = block.has_title();
@@ -715,7 +715,7 @@ private:
     }
 
     void convert_media(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         // Video/audio have no standard DocBook counterpart; emit a note
         const std::string& target = block.attr("target", "");
         out << "<para role=\"media\">"
@@ -725,7 +725,7 @@ private:
     }
 
     void convert_floating_title(const Block& block, const Document& doc,
-                                 std::ostringstream& out) const {
+                                 OutputBuffer& out) const {
         // DocBook uses <bridgehead> for floating titles
         const int level = [&]() {
             const std::string& lv = block.attr("level", "");

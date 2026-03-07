@@ -24,10 +24,10 @@
 
 #include "document.hpp"
 #include "substitutors.hpp"
+#include "outbuf.hpp"
 
 #include <algorithm>
 #include <cctype>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 
@@ -44,9 +44,9 @@ public:
     /// Convert a parsed Document to a troff-formatted man page string.
     [[nodiscard]] std::string convert(const Document& doc) const {
         counters_.clear();
-        std::ostringstream out;
+        OutputBuffer out;
         convert_document(doc, out);
-        return out.str();
+        return out.release();
     }
 
 private:
@@ -170,7 +170,7 @@ private:
     }
 
     /// Emit a troff section heading (.SH).  The title is uppercased.
-    static void emit_sh(const std::string& title, std::ostringstream& out) {
+    static void emit_sh(const std::string& title, OutputBuffer& out) {
         std::string upper;
         upper.reserve(title.size());
         for (char c : title) { upper += static_cast<char>(std::toupper(static_cast<unsigned char>(c))); }
@@ -178,13 +178,13 @@ private:
     }
 
     /// Emit a troff sub-section heading (.SS).
-    static void emit_ss(const std::string& title, std::ostringstream& out) {
+    static void emit_ss(const std::string& title, OutputBuffer& out) {
         out << ".SS " << title << '\n';
     }
 
     // ── Document ──────────────────────────────────────────────────────────────
 
-    void convert_document(const Document& doc, std::ostringstream& out) const {
+    void convert_document(const Document& doc, OutputBuffer& out) const {
         // Comment / source hint
         out << "'\\\" t\n";
 
@@ -240,7 +240,7 @@ private:
     // ── Block dispatcher ──────────────────────────────────────────────────────
 
     void convert_block(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         switch (block.context()) {
             case BlockContext::Section:
                 convert_section(dynamic_cast<const Section&>(block), doc, out);
@@ -296,7 +296,7 @@ private:
     // ── Section ───────────────────────────────────────────────────────────────
 
     void convert_section(const Section& sect, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         int level = sect.level();  // 1 = ==, 2 = ===, …
 
         if (level == 1) {
@@ -313,7 +313,7 @@ private:
     // ── Paragraph ─────────────────────────────────────────────────────────────
 
     void convert_paragraph(const Block& block, const Document& doc,
-                           std::ostringstream& out) const {
+                           OutputBuffer& out) const {
         if (block.has_title()) {
             out << ".PP\n"
                 << "\\fB" << troff_escape(block.title()) << "\\fR\n";
@@ -324,7 +324,7 @@ private:
 
     // ── Verbatim (listing / literal) ──────────────────────────────────────────
 
-    static void convert_verbatim(const Block& block, std::ostringstream& out) {
+    static void convert_verbatim(const Block& block, OutputBuffer& out) {
         out << ".if n .RS 4\n"
             << ".nf\n"
             << ".fam C\n";
@@ -350,7 +350,7 @@ private:
     // ── Admonition ────────────────────────────────────────────────────────────
 
     void convert_admonition(const Block& block, const Document& doc,
-                            std::ostringstream& out) const {
+                            OutputBuffer& out) const {
         const std::string& name = block.attr("name", "note");
         std::string label = name;
         // Title-case
@@ -375,7 +375,7 @@ private:
     // ── Compound block (example, quote, sidebar) ──────────────────────────────
 
     void convert_compound(const Block& block, const Document& doc,
-                          std::ostringstream& out) const {
+                          OutputBuffer& out) const {
         if (block.has_title()) {
             out << ".PP\n"
                 << "\\fB" << troff_escape(block.title()) << "\\fR\n";
@@ -390,7 +390,7 @@ private:
     // ── Unordered list ────────────────────────────────────────────────────────
 
     void convert_ulist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         if (list.has_title()) {
             out << ".PP\n"
                 << "\\fB" << troff_escape(list.title()) << "\\fR\n";
@@ -413,7 +413,7 @@ private:
     // ── Ordered list ──────────────────────────────────────────────────────────
 
     void convert_olist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         if (list.has_title()) {
             out << ".PP\n"
                 << "\\fB" << troff_escape(list.title()) << "\\fR\n";
@@ -435,7 +435,7 @@ private:
     // ── Description list ──────────────────────────────────────────────────────
 
     void convert_dlist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         if (list.has_title()) {
             out << ".PP\n"
                 << "\\fB" << troff_escape(list.title()) << "\\fR\n";
