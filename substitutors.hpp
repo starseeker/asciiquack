@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -344,7 +345,11 @@ inline std::string apply_quote_rx(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Expand {attribute-name} references using the supplied attribute map.
-/// Unknown attributes are left as-is.
+/// Behaviour for unknown attributes is controlled by the 'attribute-missing'
+/// entry in @p attrs:
+///   skip (default) – leave the reference as-is
+///   warn           – leave as-is and emit a WARNING to stderr
+///   drop           – replace the reference with an empty string
 [[nodiscard]] inline std::string sub_attributes(
         const std::string&                                    text,
         const std::unordered_map<std::string, std::string>&   attrs)
@@ -354,6 +359,13 @@ inline std::string apply_quote_rx(
 
     static const std::regex rx(R"(\{([\w][\w\-]*)\})",
                                 std::regex::ECMAScript | std::regex::optimize);
+
+    // Resolve attribute-missing policy (default: skip)
+    std::string missing_policy = "skip";
+    {
+        auto it = attrs.find("attribute-missing");
+        if (it != attrs.end()) { missing_policy = it->second; }
+    }
 
     std::string out;
     out.reserve(text.size());
@@ -371,8 +383,14 @@ inline std::string apply_quote_rx(
         auto ai = attrs.find(name);
         if (ai != attrs.end()) {
             out += ai->second;
+        } else if (missing_policy == "drop") {
+            // drop: replace with empty string
         } else {
-            out += m[0].str();  // leave unknown references intact
+            if (missing_policy == "warn") {
+                std::cerr << "asciiquack: WARNING: skipping reference to missing attribute: "
+                          << name << "\n";
+            }
+            out += m[0].str();  // leave unknown references intact (skip / warn)
         }
         last_pos = static_cast<std::size_t>(m.position()) +
                    static_cast<std::size_t>(m.length());

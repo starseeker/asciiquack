@@ -1,2 +1,0 @@
-* xref:safe-modes.adoc[]
-** xref:reference-safe-mode.adoc[]

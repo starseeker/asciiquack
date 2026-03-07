@@ -11,6 +11,7 @@
 /// writes the result to the output file or stdout.
 
 #include "cxxopts.hpp"
+#include "docbook5.hpp"
 #include "document.hpp"
 #include "html5.hpp"
 #include "manpage.hpp"
@@ -151,6 +152,8 @@ static int convert_one(const std::string&    source_path,
             font_path = params.attributes.at("pdf-font");
         }
         output = asciiquack::convert_to_pdf(*doc, a4, font_path);
+    } else if (params.backend == "docbook5" || params.backend == "docbook") {
+        output = asciiquack::convert_to_docbook5(*doc);
     } else {
         std::cerr << "asciiquack: backend '" << params.backend
                   << "' is not yet implemented; falling back to html5\n";
@@ -181,7 +184,7 @@ int main(int argc, char* argv[]) {
 
     options.add_options("Conversion")
         ("b,backend",
-            "Output format: html5, xhtml5, manpage, pdf (default: html5)",
+            "Output format: html5, xhtml5, manpage, docbook5, pdf (default: html5)",
             cxxopts::value<std::string>()->default_value("html5"))
         ("d,doctype",
             "Document type: article, book, manpage, inline (default: article)",

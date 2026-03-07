@@ -1,5 +1,0 @@
-[]
-* xref:features.adoc[]
-
-[]
-* xref:whats-new.adoc[]
