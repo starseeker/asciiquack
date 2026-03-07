@@ -5,9 +5,10 @@
 
 // parsing...
 
-    ==(o )===
-      ( ._> ::
-      `---'//
+     __
+   <(o )___
+    ( ._> /
+     `---'
 
 ----
 quack:: true
@@ -16,6 +17,12 @@ duck:: ascii
 ```
 
 A C++17 translation of (most of) asciidoctor.
+
+This is intending to be a minimalist, self-contained tool that can be used to
+produce output along the lines of asciidoctor, but without some of its most
+complex features - for example, our PDF output is quite basic since most full
+featured solutions to that problem are also extremely heavy.
+
 
 ## Building
 
@@ -53,18 +60,8 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 | asciiquack / embedded PCRE2 (no JIT) | ~0.77 ms | ~1 291 | **~4× faster** |
 | asciiquack / system PCRE2 (JIT) | ~0.65 ms | ~1 541 | **~4.8× faster** |
 
-### Why not RE2?
-
-RE2 was evaluated but cannot serve as a drop-in backend because several
-patterns require features RE2 intentionally omits:
-
-- **Backreferences** – e.g. `([-*_])…\1` (thematic-break detection)
-- **Lookahead assertions** – e.g. `(?=[^*\w]|$)` (constrained inline quotes)
-- **Negative lookahead** – e.g. `(?!//[^/])` (description-list guard)
-
-PCRE2 is equally fast in practice and supports the full pattern set.
-
 ### Other dependencies
 
 - µlight (https://github.com/eisenwave/ulight) is used for syntax highlighting if the compiler supports C++23
 - Command line options are supported via https://github.com/jarro2783/cxxopts
+- minimal subset of libharu
