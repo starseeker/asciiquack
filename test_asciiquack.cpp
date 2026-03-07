@@ -1624,6 +1624,273 @@ static void test_bug4_inline_bold_url() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// P3 features tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_source_callouts() {
+    begin_test("html5: source callout markers <N> rendered as badges");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[source,ruby]\n"
+        "----\n"
+        "require 'sinatra' <1>\n"
+        "get '/hi' do <2>\n"
+        "  \"Hello!\"\n"
+        "end\n"
+        "----\n"
+        "\n"
+        "<1> Load the library.\n"
+        "<2> Define a route.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+
+    // Callout markers should be replaced with badge elements
+    EXPECT_CONTAINS(out, "class=\"conum\"");
+    EXPECT_CONTAINS(out, "(1)");
+    EXPECT_CONTAINS(out, "(2)");
+    // The callout list should be present
+    EXPECT_CONTAINS(out, "colist");
+    EXPECT_CONTAINS(out, "Load the library.");
+    EXPECT_CONTAINS(out, "Define a route.");
+    // Raw &lt;1&gt; should NOT appear in source code
+    EXPECT_NOT_CONTAINS(out, "&lt;1&gt;");
+
+    end_test();
+}
+
+static void test_admonition_caption_attr() {
+    begin_test("html5: admonition caption from locale attribute");
+
+    const std::string src =
+        "= Doc\n"
+        ":note-caption: Nota\n"
+        ":tip-caption: Consejo\n"
+        "\n"
+        "NOTE: This is a note.\n"
+        "\n"
+        "TIP: This is a tip.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Nota");
+    EXPECT_CONTAINS(out, "Consejo");
+    EXPECT_NOT_CONTAINS(out, ">Note<");  // default should not appear
+
+    end_test();
+}
+
+static void test_admonition_default_captions() {
+    begin_test("html5: admonition default captions (Tip, Warning, Important, Caution)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "TIP: tip\n"
+        "\n"
+        "WARNING: warn\n"
+        "\n"
+        "IMPORTANT: important\n"
+        "\n"
+        "CAUTION: caution\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Tip");
+    EXPECT_CONTAINS(out, "Warning");
+    EXPECT_CONTAINS(out, "Important");
+    EXPECT_CONTAINS(out, "Caution");
+
+    end_test();
+}
+
+static void test_stem_inline_macro() {
+    begin_test("substitutors: stem:[] inline math macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "The formula stem:[E = mc^2] is famous.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should render as MathJax inline math
+    EXPECT_CONTAINS(out, "\\(E = mc^2\\)");
+    EXPECT_NOT_CONTAINS(out, "stem:[");
+
+    end_test();
+}
+
+static void test_latexmath_inline_macro() {
+    begin_test("substitutors: latexmath:[] inline macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Inline: latexmath:[\\sum_{i=1}^{n} i].\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "\\(");
+    EXPECT_NOT_CONTAINS(out, "latexmath:[");
+
+    end_test();
+}
+
+static void test_stem_block() {
+    begin_test("html5: [stem] block renders display math");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[stem]\n"
+        "++++\n"
+        "\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n"
+        "++++\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should wrap in display math delimiters
+    EXPECT_CONTAINS(out, "\\[");
+    EXPECT_CONTAINS(out, "\\]");
+    EXPECT_CONTAINS(out, "stemblock");
+
+    end_test();
+}
+
+static void test_preamble_no_sections() {
+    begin_test("html5: preamble div NOT emitted when no sections");
+
+    // A document with only body content and no sections should not
+    // wrap content in <div id="preamble">
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Just a paragraph. No sections.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_NOT_CONTAINS(out, "id=\"preamble\"");
+    EXPECT_CONTAINS(out, "Just a paragraph.");
+
+    end_test();
+}
+
+static void test_preamble_with_sections() {
+    begin_test("html5: preamble div emitted when sections follow");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "This is the preamble.\n"
+        "\n"
+        "== Section One\n"
+        "\n"
+        "Section content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "id=\"preamble\"");
+    EXPECT_CONTAINS(out, "This is the preamble.");
+    EXPECT_CONTAINS(out, "Section One");
+
+    end_test();
+}
+
+static void test_linkcss_attribute() {
+    begin_test("html5: :linkcss: emits <link> tag instead of inline style");
+
+    const std::string src =
+        "= Doc\n"
+        ":linkcss:\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should have a <link> tag, not inline <style>
+    EXPECT_CONTAINS(out, "<link rel=\"stylesheet\"");
+    EXPECT_NOT_CONTAINS(out, "<style>\n/* asciiquack");
+
+    end_test();
+}
+
+static void test_stylesheet_attribute() {
+    begin_test("html5: :stylesheet: path used in <link> tag");
+
+    const std::string src =
+        "= Doc\n"
+        ":linkcss:\n"
+        ":stylesheet: /custom/style.css\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "href=\"/custom/style.css\"");
+
+    end_test();
+}
+
+static void test_stem_mathjax_script() {
+    begin_test("html5: :stem: attribute adds MathJax script to head");
+
+    const std::string src =
+        "= Doc\n"
+        ":stem: latexmath\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "MathJax");
+    EXPECT_CONTAINS(out, "mathjax");
+
+    end_test();
+}
+
+static void test_doctype_manpage() {
+    begin_test("parser+html5: doctype manpage title parsing");
+
+    const std::string src =
+        "= git-commit(1)\n"
+        "Git Author\n"
+        "\n"
+        "== Name\n"
+        "\n"
+        "git-commit - Record changes to the repository\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+
+    // manname and manvolnum should be extracted
+    EXPECT(doc->attr("manname") == "git-commit");
+    EXPECT(doc->attr("manvolnum") == "1");
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should show volume number in title heading
+    EXPECT_CONTAINS(out, "git-commit(1)");
+    EXPECT_CONTAINS(out, "Manual Page");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1747,6 +2014,21 @@ int main(int argc, char* argv[]) {
     test_dlist_compound_body();
     test_idprefix_empty();
     test_bug4_inline_bold_url();
+
+    // P3 features
+    std::cout << "\nP3 features tests:\n";
+    test_source_callouts();
+    test_admonition_caption_attr();
+    test_admonition_default_captions();
+    test_stem_inline_macro();
+    test_latexmath_inline_macro();
+    test_stem_block();
+    test_preamble_no_sections();
+    test_preamble_with_sections();
+    test_linkcss_attribute();
+    test_stylesheet_attribute();
+    test_stem_mathjax_script();
+    test_doctype_manpage();
 
     // Summary
     std::cout << "\n============================\n";

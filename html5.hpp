@@ -12,6 +12,9 @@
 #include "document.hpp"
 #include "substitutors.hpp"
 
+#include <filesystem>
+#include <fstream>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -96,11 +99,33 @@ private:
             if (page_title.empty()) { page_title = doc.attr("untitled-label", "Untitled"); }
             out << "<title>" << sub_specialchars(page_title) << "</title>\n";
 
-            // Inline default stylesheet (always included unless linkcss is set)
-            if (!doc.has_attr("linkcss")) {
+            // Stylesheet: link to external file or inline the default
+            if (doc.has_attr("linkcss")) {
+                // External stylesheet link
+                const std::string& ss = doc.attr("stylesheet");
+                if (!ss.empty()) {
+                    out << "<link rel=\"stylesheet\" href=\"" << ss << "\">\n";
+                } else {
+                    // Default: link to asciiquack.css sibling
+                    out << "<link rel=\"stylesheet\" href=\"./asciiquack.css\">\n";
+                }
+            } else {
                 out << "<style>\n"
                     << default_css()
                     << "</style>\n";
+            }
+
+            // docinfo: head fragment (injected from docinfo.html in unsafe mode)
+            inject_docinfo(doc, "head", out);
+
+            // stem/MathJax: include loader script if document has stem content
+            if (doc.has_attr("stem")) {
+                const std::string& stem_type = doc.attr("stem", "latexmath");
+                if (stem_type == "latexmath" || stem_type == "asciimath" || stem_type.empty() || stem_type == "mathjax") {
+                    out << "<script>window.MathJax={tex:{inlineMath:[['\\\\(','\\\\)']],"
+                        << "displayMath:[['\\\\[','\\\\]']]}};</script>\n"
+                        << "<script async src=\"https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js\"></script>\n";
+                }
             }
 
             out << "</head>\n";
@@ -111,7 +136,18 @@ private:
             // Header div
             out << "<div id=\"header\">\n";
             if (!doc.doctitle().empty()) {
-                out << "<h1>" << subs(doc.doctitle(), doc) << "</h1>\n";
+                if (doctype == "manpage") {
+                    // Man page: title is "<name>(<volume>)" e.g. "git-commit(1)"
+                    // The manvolnum attribute, if set, appends the section number.
+                    const std::string& manvolnum = doc.attr("manvolnum");
+                    std::string manpage_title = sub_specialchars(doc.doctitle());
+                    if (!manvolnum.empty()) {
+                        manpage_title += "(" + sub_specialchars(manvolnum) + ")";
+                    }
+                    out << "<h1>" << manpage_title << " Manual Page</h1>\n";
+                } else {
+                    out << "<h1>" << subs(doc.doctitle(), doc) << "</h1>\n";
+                }
             }
 
             const auto& authors = doc.authors();
@@ -162,6 +198,8 @@ private:
 
         // ── Preamble ────────────────────────────────────────────────────────────
         // Blocks that appear before the first section are the preamble.
+        // The preamble <div> is only emitted when there are sections following
+        // (matching Ruby Asciidoctor behaviour).
         std::vector<const Block*> preamble_blocks;
         std::vector<const Block*> section_blocks;
 
@@ -175,14 +213,22 @@ private:
             }
         }
 
+        // Only wrap in preamble div when sections follow.  If there are no
+        // sections the content is rendered directly into #content.
+        const bool has_sections = !section_blocks.empty();
+
         if (!preamble_blocks.empty()) {
-            out << "<div id=\"preamble\">\n";
-            out << "<div class=\"sectionbody\">\n";
+            if (has_sections) {
+                out << "<div id=\"preamble\">\n";
+                out << "<div class=\"sectionbody\">\n";
+            }
             for (const Block* b : preamble_blocks) {
                 convert_block(*b, doc, out);
             }
-            out << "</div>\n";  // sectionbody
-            out << "</div>\n";  // #preamble
+            if (has_sections) {
+                out << "</div>\n";  // sectionbody
+                out << "</div>\n";  // #preamble
+            }
 
             // TOC after preamble (toc-placement: preamble)
             if (!embedded && doc.has_attr("toc")) {
@@ -213,6 +259,10 @@ private:
             }
             out << "</div>\n";  // #footer-text
             out << "</div>\n";  // #footer
+
+            // docinfo: footer fragment
+            inject_docinfo(doc, "footer", out);
+
             out << "</body>\n";
             out << "</html>\n";
         }
@@ -280,10 +330,28 @@ private:
             case BlockContext::Toc:
                 convert_toc(doc, out);
                 break;
-            case BlockContext::Pass:
-                // Raw passthrough: emit content without any substitutions
-                out << block.source() << '\n';
+            case BlockContext::Pass: {
+                // Check if this is a stem block
+                const std::string& s = block.style();
+                if (s == "stem" || s == "latexmath") {
+                    // Display math: \[...\]
+                    out << "<div class=\"stemblock\">\n"
+                        << "<div class=\"content\">\n"
+                        << "\\[" << block.source() << "\\]\n"
+                        << "</div>\n"
+                        << "</div>\n";
+                } else if (s == "asciimath") {
+                    out << "<div class=\"stemblock\">\n"
+                        << "<div class=\"content\">\n"
+                        << "`" << block.source() << "`\n"
+                        << "</div>\n"
+                        << "</div>\n";
+                } else {
+                    // Raw passthrough: emit content without any substitutions
+                    out << block.source() << '\n';
+                }
                 break;
+            }
             case BlockContext::ThematicBreak:
                 out << "<hr>\n";
                 break;
@@ -386,13 +454,19 @@ private:
         }
         out << "<div class=\"content\">\n";
 
+        // Apply verbatim escaping, then callout substitution
+        std::string escaped = verbatim(block.source());
+        // Replace HTML-escaped callout markers &lt;N&gt; with badge elements
+        // Use the block id (if any) to generate unique anchors
+        std::string src_html = substitute_callouts(escaped, block.id());
+
         if (is_source && !language.empty()) {
             out << "<pre class=\"highlight\"><code class=\"language-" << language
                 << "\" data-lang=\"" << language << "\">"
-                << verbatim(block.source())
+                << src_html
                 << "</code></pre>\n";
         } else {
-            out << "<pre>" << verbatim(block.source()) << "</pre>\n";
+            out << "<pre>" << src_html << "</pre>\n";
         }
 
         out << "</div>\n";  // content
@@ -487,13 +561,48 @@ private:
 
     void convert_admonition(const Block& block, const Document& doc,
                             std::ostringstream& out) const {
-        const std::string& name    = block.attr("name",    "note");
-        const std::string& caption = block.attr("caption", "Note");
+        const std::string& name = block.attr("name", "note");
+
+        // Determine caption priority:
+        // 1. Document locale attribute (e.g. :note-caption: Nota) – user i18n
+        // 2. Block-level caption attribute set by user in block attributes
+        // 3. Built-in English default
+        std::string caption;
+        const std::string locale_key = name + "-caption";
+        if (doc.has_attr(locale_key)) {
+            caption = doc.attr(locale_key);
+        } else if (block.has_attr("caption")) {
+            // Block-level caption (set explicitly by user or parser)
+            // Only honour if it differs from the default label name
+            const std::string& bc = block.attr("caption");
+            // Parser sets caption = uppercase label (NOTE, TIP, …)
+            // User may override in block attrs: [caption="My Title"]
+            // We use the block caption only as-is here; locale takes priority above
+            caption = bc;
+        }
+
+        // If still empty, use built-in defaults
+        if (caption.empty()) {
+            if      (name == "tip")       { caption = "Tip"; }
+            else if (name == "warning")   { caption = "Warning"; }
+            else if (name == "important") { caption = "Important"; }
+            else if (name == "caution")   { caption = "Caution"; }
+            else                          { caption = "Note"; }
+        } else if (caption == "NOTE" || caption == "TIP" ||
+                   caption == "WARNING" || caption == "IMPORTANT" ||
+                   caption == "CAUTION") {
+            // Parser-set raw uppercase label: translate to Title Case default
+            if      (caption == "TIP")       { caption = "Tip"; }
+            else if (caption == "WARNING")   { caption = "Warning"; }
+            else if (caption == "IMPORTANT") { caption = "Important"; }
+            else if (caption == "CAUTION")   { caption = "Caution"; }
+            else                             { caption = "Note"; }
+        }
 
         out << "<div class=\"admonitionblock " << name << "\">\n"
             << "<table><tr>\n"
             << "<td class=\"icon\">\n"
-            << "<div class=\"title\">" << caption << "</div>\n"
+            << "<div class=\"title\">" << sub_specialchars(caption) << "</div>\n"
             << "</td>\n"
             << "<td class=\"content\">\n";
 
@@ -616,8 +725,14 @@ private:
                         std::ostringstream& out) const {
         out << "<div class=\"colist arabic\">\n";
         out << "<ol>\n";
+        int n = 1;
         for (const auto& item : list.items()) {
-            out << "<li>\n<p>" << subs(item->source(), doc) << "</p>\n</li>\n";
+            out << "<li>\n";
+            // Emit the callout badge number
+            out << "<span class=\"conum\">(" << n << ")</span> ";
+            out << "<p>" << subs(item->source(), doc) << "</p>\n";
+            out << "</li>\n";
+            ++n;
         }
         out << "</ol>\n"
             << "</div>\n";
@@ -801,6 +916,92 @@ private:
         out << "</div>\n";
     }
 
+    // ── Source callout substitution ────────────────────────────────────────────
+
+    /// Replace HTML-escaped callout markers (``&lt;N&gt;``) in verbatim source
+    /// text with styled callout badges.  Each callout gets an anchor so the
+    /// corresponding colist item can link back to it.
+    ///
+    /// @p block_id  is used to generate unique per-block anchor ids.
+    /// @p counters  (out) maps callout number → count of occurrences so that
+    ///              convert_colist can emit matching badges.
+    static std::string substitute_callouts(const std::string& escaped_source,
+                                           const std::string& block_id)
+    {
+        // After verbatim() the < and > are already HTML-escaped.
+        // Match &lt;N&gt; where N is one or more digits.
+        static const std::regex co_rx(R"(&lt;(\d+)&gt;)",
+                                      std::regex::ECMAScript | std::regex::optimize);
+        std::string result;
+        result.reserve(escaped_source.size());
+        auto begin = std::sregex_iterator(escaped_source.begin(),
+                                          escaped_source.end(), co_rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            result.append(escaped_source, last,
+                          static_cast<std::size_t>(m.position()) - last);
+            std::string num = m[1].str();
+            // Emit an anchor so the callout list item can link back
+            std::string anchor_id = "CO" + (block_id.empty() ? num : block_id + "-" + num);
+            result += "<b id=\"" + anchor_id + "\" class=\"conum\">(" + num + ")</b>";
+            last = static_cast<std::size_t>(m.position()) +
+                   static_cast<std::size_t>(m.length());
+        }
+        result.append(escaped_source, last);
+        return result;
+    }
+
+    // ── docinfo file injection ─────────────────────────────────────────────────
+
+    /// Inject docinfo fragment content.
+    ///
+    /// @p location is "head" or "footer".
+    /// In head location, content is injected just before `</head>`.
+    /// In footer location, content is injected just before `</body>`.
+    ///
+    /// Files are only read in Unsafe or Server safe-mode.
+    /// Looks for: `docinfo.html` (head) and `docinfo-footer.html` (footer),
+    /// and also `<docname>-docinfo.html` / `<docname>-docinfo-footer.html`.
+    void inject_docinfo(const Document& doc,
+                        const std::string& location,
+                        std::ostringstream& out) const {
+        // Only inject in unsafe mode
+        if (doc.safe_mode() != SafeMode::Unsafe &&
+            doc.safe_mode() != SafeMode::Server) {
+            return;
+        }
+
+        namespace fs = std::filesystem;
+        const std::string& base = doc.base_dir().empty() ? "." : doc.base_dir();
+
+        // Build candidate file names
+        std::string suffix = (location == "head") ? "docinfo.html" : "docinfo-footer.html";
+        std::vector<fs::path> candidates = {
+            fs::path(base) / suffix
+        };
+        // Per-document docinfo: <docname>-docinfo.html
+        const std::string& src_file = doc.source_file();
+        if (!src_file.empty()) {
+            fs::path stem = fs::path(src_file).stem();
+            std::string per_doc_suffix = (location == "head")
+                ? (stem.string() + "-docinfo.html")
+                : (stem.string() + "-docinfo-footer.html");
+            candidates.push_back(fs::path(base) / per_doc_suffix);
+        }
+
+        for (const auto& p : candidates) {
+            std::error_code ec;
+            if (!fs::exists(p, ec)) { continue; }
+            std::ifstream f(p);
+            if (!f.is_open()) { continue; }
+            std::string content((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+            out << content << '\n';
+        }
+    }
+
     // ── Floating title ─────────────────────────────────────────────────────────
 
     void convert_floating_title(const Block& block, const Document& doc,
@@ -955,7 +1156,16 @@ private:
             "b.button{border:1px solid #aaa;border-radius:3px;padding:.1em .35em;"
               "font-size:.9em;background:#f0f0f0;font-weight:normal}\n"
             ".menuseq,.menu,.menuitem{font-style:italic}\n"
-            ".caret{font-style:normal;font-weight:bold}\n";
+            ".caret{font-style:normal;font-weight:bold}\n"
+            // source callouts
+            "b.conum,span.conum{display:inline-block;background:#555;color:#fff;"
+              "border-radius:50%;width:1.2em;height:1.2em;text-align:center;"
+              "line-height:1.2em;font-size:.8em;font-weight:bold;font-style:normal;"
+              "margin:0 .1em}\n"
+            ".colist{margin:.5em 0}\n"
+            ".colist ol{list-style:none;padding-left:0}\n"
+            // stem / math
+            ".stemblock{margin:1em 0}\n";
     }
 };
 

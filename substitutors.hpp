@@ -641,6 +641,38 @@ inline std::string apply_quote_rx(
         out = std::move(after);
     }
 
+    // ── Inline stem / math macros ─────────────────────────────────────────────
+    // stem:[expr]      → \(expr\)
+    // latexmath:[expr] → \(expr\)
+    // asciimath:[expr] → `expr`  (rendered by MathJax ASCIIMath)
+    if (out.find("stem:") != std::string::npos ||
+        out.find("latexmath:") != std::string::npos ||
+        out.find("asciimath:") != std::string::npos) {
+        static const std::regex math_rx(
+            R"((stem|latexmath|asciimath):\[([^\]]*)\])",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::string after;
+        auto begin = std::sregex_iterator(out.begin(), out.end(), math_rx);
+        auto end   = std::sregex_iterator{};
+        std::size_t last = 0;
+        for (auto it = begin; it != end; ++it) {
+            const std::smatch& m = *it;
+            after.append(out, last, static_cast<std::size_t>(m.position()) - last);
+            std::string kind = m[1].str();
+            std::string expr = m[2].str();
+            if (kind == "asciimath") {
+                after += "`" + expr + "`";
+            } else {
+                // LaTeX inline: \(expr\)
+                after += "\\(" + expr + "\\)";
+            }
+            last = static_cast<std::size_t>(m.position()) +
+                   static_cast<std::size_t>(m.length());
+        }
+        after.append(out, last);
+        out = std::move(after);
+    }
+
     return out;
 }
 

@@ -759,6 +759,18 @@ void Parser::parse_document_header(Reader& reader, Document& doc) {
             doc.set_doctitle(title);
             doc.header().has_header = true;
 
+            // For doctype: manpage, parse "name(volnum)" from the title
+            // e.g. "git-commit(1)" → manname="git-commit", manvolnum="1"
+            if (doc.doctype() == "manpage") {
+                static const std::regex manpage_rx(R"(^(.+?)\((\d+[a-zA-Z0-9]*)\)$)",
+                    std::regex::ECMAScript | std::regex::optimize);
+                std::smatch mm;
+                if (std::regex_match(title, mm, manpage_rx)) {
+                    doc.set_attr("manname",   mm[1].str());
+                    doc.set_attr("manvolnum", mm[2].str());
+                }
+            }
+
             // Register in catalog
             std::string id_prefix = doc.attr("idprefix", "_");
             std::string id_sep    = doc.attr("idseparator", "_");
