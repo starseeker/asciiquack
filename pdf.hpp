@@ -484,12 +484,16 @@ public:
     // ── Horizontal rule ───────────────────────────────────────────────────────
 
     void hrule() {
-        ensure_space(8.0f);
+        // Leave room above the rule (4 pt) and enough room below so that
+        // ascenders of the following text (≈ BODY_SIZE × 0.85) do not reach
+        // up through the rule line.
+        const float gap_below = BODY_SIZE * 0.85f;
+        ensure_space(4.0f + gap_below);
         cursor_y_ -= 4.0f;
         page_->draw_hline(MARGIN_LEFT, cursor_y_,
                           MARGIN_LEFT + content_w_, 0.5f,
                           0.5f, 0.5f, 0.5f);
-        cursor_y_ -= 4.0f;
+        cursor_y_ -= gap_below;
     }
 
     // ── Image block ───────────────────────────────────────────────────────────
