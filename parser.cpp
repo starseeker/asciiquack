@@ -20,6 +20,7 @@
 #include <cassert>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -501,7 +502,11 @@ void handle_include(const std::string& line, Reader& reader, Document& doc) {
 
     // Read the file
     std::ifstream file(target_path);
-    if (!file.is_open()) { return; }
+    if (!file.is_open()) {
+        std::cerr << "asciiquack: WARNING: include file not found: "
+                  << target_path.string() << '\n';
+        return;
+    }
 
     std::vector<std::string> included_lines;
     std::string cur;
@@ -1378,7 +1383,12 @@ std::shared_ptr<Section> Parser::parse_section(
             break;
         }
         if (next_level == child_level || next_level > child_level) {
-            // Nested section (accepts deeper-than-expected nesting for flexibility)
+            // Nested section: if deeper than the expected child level, warn.
+            if (next_level > child_level) {
+                std::cerr << "asciiquack: WARNING: section nesting skips a level"
+                             " (level " << next_level << " inside level " << level
+                          << "); treating as level " << child_level << " child\n";
+            }
             std::unordered_map<std::string, std::string> sub_attrs;
             auto sub = parse_section(reader, *sect, next_line, sub_attrs);
             if (sub) { sect->append(sub); }
@@ -1691,22 +1701,83 @@ std::shared_ptr<Table> Parser::parse_table(
     // "cols" attribute for column specs
     auto cols_it = pending_attrs.find("cols");
     if (cols_it != pending_attrs.end()) {
-        // Simple parsing: comma-separated widths like "1,2,3" or "1*,2*"
+        // Full parsing of column spec strings like:
+        //   "1,2,3"          – proportional widths
+        //   "1*,2*,3*"       – explicit proportional widths
+        //   ">1,^2,<3"       – alignment prefix (right, center, left)
+        //   "1h,2e,3"        – column style suffix (h=header, e=emphasis, etc.)
+        //   "~"              – auto-width column (width=0 signals auto)
         std::string cols_str = cols_it->second;
+        // Handle repeat notation "3*" at the top level (e.g., "3*,2") – multiply
+        // a single spec by N.  Full repeat syntax is "N*specifier".
         std::istringstream ss(cols_str);
         std::string col;
         while (std::getline(ss, col, ',')) {
             trim(col);
+            if (col.empty()) { continue; }
+
             ColumnSpec spec;
-            // Parse width (number before optional '*' or '%')
-            try {
+
+            // 1. Check for a repeat prefix "N*" (e.g., "3*>1m" or "3*")
+            // Distinguish: "3*>" (repeat=3, align=right) vs "3*1" (width=3, proportional)
+            int repeat = 1;
+            std::size_t ci = 0;
+            if (ci < col.size() && std::isdigit(static_cast<unsigned char>(col[ci]))) {
+                // Find the position one past the leading digit run
+                std::size_t star_pos = ci;
+                while (star_pos < col.size() && std::isdigit(static_cast<unsigned char>(col[star_pos]))) {
+                    ++star_pos;
+                }
+                // A repeat prefix looks like "N*" where what follows is either
+                // end-of-string or a non-digit (alignment char, style, etc.).
+                bool is_repeat_prefix =
+                    star_pos < col.size() && col[star_pos] == '*' &&
+                    (star_pos + 1 >= col.size() ||
+                     !std::isdigit(static_cast<unsigned char>(col[star_pos + 1])));
+                if (is_repeat_prefix) {
+                    repeat = std::stoi(col.substr(0, star_pos));
+                    col    = col.substr(star_pos + 1);
+                    ci = 0;
+                }
+            }
+
+            // 2. Alignment prefix character: '<' left, '^' center, '>' right
+            if (ci < col.size()) {
+                if (col[ci] == '<') { spec.halign = "left";   ++ci; }
+                else if (col[ci] == '^') { spec.halign = "center"; ++ci; }
+                else if (col[ci] == '>') { spec.halign = "right";  ++ci; }
+            }
+
+            // 3. Width (integer, or '~' for auto-width)
+            if (ci < col.size() && col[ci] == '~') {
+                spec.width = 0;  // 0 signals auto-width
+                ++ci;
+            } else if (ci < col.size() && std::isdigit(static_cast<unsigned char>(col[ci]))) {
                 std::size_t pos = 0;
-                spec.width = std::stoi(col, &pos);
-                (void)pos;
-            } catch (...) {
+                try { spec.width = std::stoi(col.substr(ci), &pos); ci += pos; }
+                catch (...) { spec.width = 1; }
+            } else {
                 spec.width = 1;
             }
-            tbl->add_column_spec(spec);
+
+            // 4. Optional '*' or '%' suffix after the width (already consumed
+            //    if we parsed a digit; handle the case where col started with '~')
+            if (ci < col.size() && (col[ci] == '*' || col[ci] == '%')) {
+                ++ci;
+            }
+
+            // 5. Style character suffix: d(efault), s(trong/bold), e(mphasis),
+            //    m(onospace), h(eader), l(iteral), a(sDoc)
+            if (ci < col.size()) {
+                static const std::string STYLE_CHARS = "dsemhla";
+                if (STYLE_CHARS.find(col[ci]) != std::string::npos) {
+                    spec.style = std::string(1, col[ci]);
+                }
+            }
+
+            for (int r = 0; r < repeat; ++r) {
+                tbl->add_column_spec(spec);
+            }
         }
     }
 

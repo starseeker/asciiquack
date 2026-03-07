@@ -10,6 +10,7 @@
 
 #include "document.hpp"
 #include "html5.hpp"
+#include "manpage.hpp"
 #include "parser.hpp"
 #include "reader.hpp"
 #include "substitutors.hpp"
@@ -1890,6 +1891,186 @@ static void test_doctype_manpage() {
     end_test();
 }
 
+static void test_manpage_backend_basic() {
+    begin_test("manpage: basic document converts to troff");
+
+    const std::string src =
+        "= ls(1)\n"
+        ":manvolnum: 1\n"
+        "\n"
+        "== Name\n"
+        "\n"
+        "ls - list directory contents\n"
+        "\n"
+        "== Synopsis\n"
+        "\n"
+        "ls [options] [file...]\n"
+        "\n"
+        "== Description\n"
+        "\n"
+        "List information about the FILEs.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+
+    // .TH header must be present
+    EXPECT_CONTAINS(out, ".TH");
+    EXPECT_CONTAINS(out, "LS");
+    // Section headings
+    EXPECT_CONTAINS(out, ".SH NAME");
+    EXPECT_CONTAINS(out, ".SH SYNOPSIS");
+    EXPECT_CONTAINS(out, ".SH DESCRIPTION");
+    // Paragraph content
+    EXPECT_CONTAINS(out, "list directory contents");
+
+    end_test();
+}
+
+static void test_manpage_backend_bold_italic() {
+    begin_test("manpage: inline bold and italic rendered as troff markup");
+
+    const std::string src =
+        "= test(1)\n"
+        "\n"
+        "== Description\n"
+        "\n"
+        "Use *bold* text and _italic_ text here.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+
+    EXPECT_CONTAINS(out, "\\fB");
+    EXPECT_CONTAINS(out, "\\fR");
+    EXPECT_CONTAINS(out, "\\fI");
+
+    end_test();
+}
+
+static void test_manpage_backend_listing() {
+    begin_test("manpage: listing block uses .nf/.fi");
+
+    const std::string src =
+        "= test(1)\n"
+        "\n"
+        "== Synopsis\n"
+        "\n"
+        "----\n"
+        "command --flag value\n"
+        "----\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+
+    EXPECT_CONTAINS(out, ".nf");
+    EXPECT_CONTAINS(out, ".fi");
+    EXPECT_CONTAINS(out, "command --flag value");
+
+    end_test();
+}
+
+static void test_table_col_alignment() {
+    begin_test("html5: table cols alignment prefix (< ^ >)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[cols=\"<1,^1,>1\",options=\"header\"]\n"
+        "|===\n"
+        "| Left | Center | Right\n"
+        "| a | b | c\n"
+        "|===\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+
+    EXPECT_CONTAINS(out, "halign-left");
+    EXPECT_CONTAINS(out, "halign-center");
+    EXPECT_CONTAINS(out, "halign-right");
+
+    end_test();
+}
+
+static void test_table_col_repeat() {
+    begin_test("html5: table cols repeat notation (3*)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[cols=\"3*\"]\n"
+        "|===\n"
+        "| a | b | c\n"
+        "|===\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    // Should parse 3 equal-width columns from the repeat shorthand "3*"
+    bool found_table = false;
+    for (const auto& blk : doc->blocks()) {
+        if (blk->context() == asciiquack::BlockContext::Table) {
+            auto& tbl = dynamic_cast<const asciiquack::Table&>(*blk);
+            EXPECT(tbl.column_specs().size() == 3);
+            found_table = true;
+        }
+    }
+    EXPECT(found_table);
+
+    end_test();
+}
+
+static void test_table_col_style_h() {
+    begin_test("html5: table cols style 'h' renders first column as header");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[cols=\"1h,2\"]\n"
+        "|===\n"
+        "| Key | Value\n"
+        "| name | Alice\n"
+        "|===\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+
+    // The 'h' style column should render body cells as <th> not <td>
+    EXPECT_CONTAINS(out, "<th");
+
+    end_test();
+}
+
+static void test_section_nesting_warning() {
+    begin_test("parser: section nesting skip emits warning to stderr");
+
+    // Redirect stderr to a string buffer for inspection
+    std::ostringstream err_buf;
+    std::streambuf* old_err = std::cerr.rdbuf(err_buf.rdbuf());
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "== Section\n"
+        "\n"
+        "==== Deep nested (skips ===)\n"
+        "\n"
+        "Content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    (void)doc;
+
+    std::cerr.rdbuf(old_err);  // restore
+
+    std::string errmsg = err_buf.str();
+    EXPECT_CONTAINS(errmsg, "WARNING");
+    EXPECT_CONTAINS(errmsg, "nesting");
+
+    end_test();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2029,6 +2210,13 @@ int main(int argc, char* argv[]) {
     test_stylesheet_attribute();
     test_stem_mathjax_script();
     test_doctype_manpage();
+    test_manpage_backend_basic();
+    test_manpage_backend_bold_italic();
+    test_manpage_backend_listing();
+    test_table_col_alignment();
+    test_table_col_repeat();
+    test_table_col_style_h();
+    test_section_nesting_warning();
 
     // Summary
     std::cout << "\n============================\n";

@@ -93,6 +93,10 @@ Ruby feature set is still missing.
 | `docinfo.html` / `docinfo-footer.html` injection (unsafe mode) | ✅ |
 | MathJax CDN loader when `:stem:` attribute is set | ✅ |
 | `doctype: manpage` title parsing (`manname`, `manvolnum`) | ✅ |
+| Man page backend (`-b manpage`, troff/groff output) | ✅ |
+| Table column spec: proportional, alignment, repeat, style | ✅ |
+| Logging: missing include file warning | ✅ |
+| Section nesting validation warning | ✅ |
 
 ---
 
@@ -102,38 +106,111 @@ The items below are grouped by priority.  Items are **P3** (advanced or rarely u
 
 ### P3 – Advanced / Optional
 
-22. **Man page backend** (`-b manpage`)
-    - Ruby source: `lib/asciidoctor/converter/manpage.rb` (757 lines).
-    - `doctype: manpage` title parsing is already implemented;
-      full troff/groff output requires a separate converter.
+22. ~~**Man page backend** (`-b manpage`)~~ **Implemented** (`manpage.hpp`)
+    - Generates troff/groff output for sections, paragraphs, lists,
+      description lists, listing blocks (`.nf`/`.fi`), admonitions,
+      and compound blocks.  Verified with `man -l` and `groff -man`.
 
-23. **Full table-column spec parsing**
-    - The `cols` attribute supports rich specifiers: `cols="1,2,3"`,
-      `cols="1*,2*"` (proportional), `cols=">1,^2,<3"` (alignment),
-      `cols="1h,2,3"` (header column style), etc.
-    - AsciiDoc-style cell content (the `a|` cell type for nested AsciiDoc).
+23. ~~**Full table-column spec parsing**~~ **Implemented** (`parser.cpp`, `html5.hpp`)
+    - Parses proportional widths (`1*,2*`), alignment prefixes (`<^>`),
+      repeat notation (`3*`), header/style suffixes (`h`, `e`, etc.),
+      and auto-width columns (`~`).
+    - Column alignment is applied in the HTML `<colgroup>` and cell CSS classes.
+    - AsciiDoc-style cell content (the `a|` cell type for nested AsciiDoc)
+      remains unimplemented (niche feature; consider for a future pass).
 
-24. **Markdown-compatible section titles** (`#`, `##`, …)
+24. **Markdown-compatible section titles** (`#`, `##`, …) — **Out of scope**
     - Ruby Asciidoctor historically supported Markdown-style headings
       via `Asciidoctor::Compliance.markdown_syntax`.  This mode is rarely
-      needed; document it as out-of-scope or add as an option.
+      needed and conflicts with AsciiDoc's `#` line-comment intent.
+    - **Decision:** out of scope; document users should use `=` headings.
 
-25. **Logging / diagnostics** (`:sourcemap:` attribute, warning messages)
-    - The Ruby implementation emits structured log messages for missing
-      includes, unknown attributes, unclosed blocks, etc.
-    - Ruby source: `lib/asciidoctor/logging.rb`.
+25. ~~**Logging / diagnostics**~~ **Partially implemented** (`parser.cpp`)
+    - Missing include files now emit a `WARNING` to `stderr`.
+    - Section nesting violations now emit a `WARNING` to `stderr`.
+    - Remaining gaps: unknown attribute warnings, unclosed-block detection,
+      and structured sourcemap logging (`:sourcemap:` attribute).
 
-26. **Section nesting validation**
-    - Section nesting deeper than one level beyond parent is silently accepted.
-    - Ruby source: `lib/asciidoctor/section.rb`.
+26. ~~**Section nesting validation**~~ **Implemented** (`parser.cpp`)
+    - When a section is nested more than one level deeper than its parent,
+      a warning is emitted to `stderr`.
 
 ---
 
 ## To investigate
 
-PDF output is one of the potentially interesting targets for asciiquack -
-what would be involved with duplicating asciidoc's abilities in that
-regard?  Could it be done without translating a massive dependency chain?
+### PDF Output Investigation
+
+PDF output is one of the potentially interesting targets for asciiquack.
+Below is an analysis of what would be involved.
+
+#### What Asciidoctor does
+
+Ruby Asciidoctor delegates PDF output to the **asciidoctor-pdf** gem
+(a separate ~25,000-line Ruby project), which:
+
+1. Parses the document into the standard Asciidoctor AST (already done by
+   the core parser).
+2. Walks the AST with a PDF-specific converter and lays out content using
+   the **Prawn** Ruby PDF library.
+3. Prawn builds a PDF stream, handling: text layout, fonts (TTF embedding),
+   image inclusion (PNG/JPEG/SVG), tables, and page geometry.
+
+#### Options for asciiquack
+
+**Option A – Native C++ PDF generation with libharu (LibHaru)**
+- [libharu](http://libharu.org/) is a lightweight, BSD-licensed C library
+  for generating PDF files (no dependencies beyond zlib/png).
+- Coverage: text, images, basic tables, Unicode (with font embedding).
+- Limitations: no complex text layout (line-breaking, hyphenation),
+  no advanced table features, no SVG.
+- Effort estimate: **medium** (~1,500–2,000 lines for a basic converter).
+  The core is straightforward but typography is difficult.
+
+**Option B – Generate troff/groff and convert via ghostscript**
+- Use the existing man page backend (`-b manpage`) piped through
+  `groff -Tpdf | ps2pdf` or `groff -T pdf`.
+- Pros: zero new dependencies; the hard work (layout) is done by groff.
+- Cons: output looks like a man page, not a polished document; only
+  suits technical manuals.
+- Effort: **very low** (the backend already exists).
+
+**Option C – Generate HTML and use a headless browser (wkhtmltopdf / Chrome)**
+- Convert to HTML5 (already done), then call `wkhtmltopdf` or
+  `chromium --headless --print-to-pdf` as a subprocess.
+- Pros: full fidelity HTML→PDF; CSS styling, images, all features work.
+- Cons: external dependency on a headless browser or `wkhtmltopdf`;
+  not suitable for environments without a display server.
+- Effort: **very low** to add the subprocess call; medium to integrate
+  cleanly into the CLI (`-b pdf` → run html5 + print-to-pdf).
+
+**Option D – Generate LaTeX and compile with pdflatex/xelatex**
+- Add a LaTeX converter backend (similar in scope to the man page backend).
+- Then `pdflatex` or `xelatex` produces a high-quality PDF.
+- Pros: high-quality typesetting; already a common path for AsciiDoc users.
+- Cons: requires a TeX installation; LaTeX escaping is non-trivial; large
+  table/image support adds complexity.
+- Effort: **medium–high** (~2,000–3,000 lines for a comprehensive converter).
+
+#### Recommendation
+
+For asciiquack specifically, **Option C (HTML + headless browser)** offers
+the best return on investment:
+
+- Zero new C++ code required beyond a subprocess wrapper.
+- Full visual fidelity (the HTML5 backend is already polished).
+- A `--pdf` flag or `-b pdf` option can invoke the converter automatically.
+
+**Option D (LaTeX)** is worth considering if asciiquack is intended to be
+self-contained without browser/TeX runtime dependencies, but is substantially
+more work.
+
+**Option A (libharu)** provides native PDF without runtime dependencies but
+requires implementing a complete text-layout engine, which is the hardest
+part of PDF generation.
+
+A future sprint should start with Option C as a quick proof-of-concept, then
+evaluate whether the output quality justifies adding a LaTeX backend.
 
 ---
 
@@ -469,7 +546,7 @@ or rarely used.
 | 5 | `std::regex` is compiled on every call to `sub_quotes` etc. (static local works, but GCC's `<regex>` is slow – see performance section) | `substitutors.hpp` | Medium |
 | 6 | Attribute entries with multi-line values (trailing `\`) silently discard the continuation | `parser.cpp` | Low |
 | 7 | Description list term regex can match table separator rows | `parser.cpp` | Low |
-| 8 | Section nesting deeper than one level beyond parent is silently accepted | `parser.cpp` | Low |
+| 8 | ~~Section nesting deeper than one level beyond parent is silently accepted~~ | `parser.cpp` | **Fixed** (now emits WARNING) |
 
 ---
 
