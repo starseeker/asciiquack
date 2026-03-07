@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <cstddef>
+#include <type_traits>
 
 namespace asciiquack {
 
@@ -36,6 +37,18 @@ public:
     }
     OutputBuffer& operator<<(char c) {
         buf_ += c; return *this;
+    }
+
+    // Integral overloads – format the number as its decimal string representation.
+    // The char and bool specialisations are handled by their own overloads above
+    // and below, so exclude them here to avoid ambiguity.
+    template<typename T>
+    std::enable_if_t<std::is_integral_v<T> &&
+                     !std::is_same_v<T, char> &&
+                     !std::is_same_v<T, bool>,
+                     OutputBuffer&>
+    operator<<(T n) {
+        buf_ += std::to_string(n); return *this;
     }
 
     // Compatibility with code that calls out.str() to retrieve the result.
