@@ -684,7 +684,213 @@ public:
     [[nodiscard]] float cursor_y() const { return cursor_y_; }
     [[nodiscard]] float content_w() const { return content_w_; }
 
+    // ── Table ─────────────────────────────────────────────────────────────────
+
+    /// One pre-processed table row passed to table_block().
+    struct TableRowData {
+        std::vector<std::string> cells;  ///< pre-substituted cell text
+        bool                     header; ///< true → bold text + shaded background
+    };
+
+    /// Render a grid table.
+    ///
+    /// Column widths are given as absolute points and must sum to roughly
+    /// content_w_.  Each row is a TableRowData with pre-substituted cell text.
+    /// An optional block @p title is rendered above the table.
+    ///
+    /// The implementation:
+    ///   - draws a light-grey background for header rows;
+    ///   - word-wraps cell text to fit within each column;
+    ///   - calls ensure_space() once per row so the table can span pages;
+    ///   - draws a thin (0.5 pt) grid around every cell.
+    void table_block(const std::vector<float>& col_w,
+                     const std::vector<TableRowData>& rows,
+                     const std::string& title = "") {
+        if (col_w.empty() || rows.empty()) { return; }
+
+        const std::size_t ncols    = col_w.size();
+        const float       lh       = BODY_SIZE * LINE_RATIO;
+        const float       pad_x    = 4.0f;          ///< horizontal cell padding (pts)
+        // Vertical padding must clear the text ascenders / descenders.
+        // cursor_y_ is the text BASELINE; ascenders extend roughly
+        // 0.75 × BODY_SIZE above the baseline, descenders ~0.25 × below.
+        const float       pad_top  = BODY_SIZE * 0.85f; ///< baseline → top border gap
+        const float       pad_bot  = BODY_SIZE * 0.35f; ///< last-baseline → bottom gap
+        const float       bdr      = 0.5f;          ///< border line width (pts)
+        const float       bdr_grey = 0.5f;           ///< border grey level
+
+        if (!title.empty()) { block_title(title); }
+
+        // ── helpers ──────────────────────────────────────────────────────────
+
+        // Count how many wrapped lines are needed to fit @p spans in @p avail_w.
+        auto count_lines = [&](const std::vector<TextSpan>& spans,
+                               float avail_w) -> int {
+            if (spans.empty()) { return 1; }
+            float space_w  = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
+            int   lines    = 1;
+            float line_w   = 0.0f;
+            for (const auto& sp : spans) {
+                std::istringstream ss(sp.text);
+                std::string        tok;
+                while (std::getline(ss, tok, ' ')) {
+                    if (tok.empty()) { continue; }
+                    float ww   = tw(tok, sp.style, sp.size);
+                    float need = (line_w == 0.0f) ? ww : line_w + space_w + ww;
+                    if (need > avail_w && line_w > 0.0f) { ++lines; line_w = ww; }
+                    else                                  { line_w = need; }
+                }
+            }
+            return lines;
+        };
+
+        // ── row rendering ────────────────────────────────────────────────────
+
+        float table_x = MARGIN_LEFT;
+        float table_w = content_w_;
+
+        for (const auto& row : rows) {
+            const auto base = row.header ? minipdf::FontStyle::Bold
+                                         : minipdf::FontStyle::Regular;
+
+            // Compute row height: tallest cell drives the row.
+            // row_h = pad_top (above first baseline) + nl × lh + pad_bot (below last baseline)
+            float row_h = pad_top + lh + pad_bot;
+            for (std::size_t ci = 0; ci < ncols; ++ci) {
+                const std::string& txt = (ci < row.cells.size())
+                                          ? row.cells[ci] : "";
+                if (txt.empty()) { continue; }
+                auto spans = merge_spans(parse_spans(txt, base));
+                for (auto& sp : spans) { sp.size = BODY_SIZE; }
+                float avail_w = col_w[ci] - 2.0f * pad_x;
+                int   nl      = count_lines(spans, avail_w);
+                float cell_h  = pad_top + static_cast<float>(nl) * lh + pad_bot;
+                row_h = std::max(row_h, cell_h);
+            }
+
+            ensure_space(row_h + bdr);
+
+            float row_top    = cursor_y_;
+            float row_bottom = row_top - row_h;
+
+            // Header rows: light-grey fill.
+            if (row.header) {
+                page_->fill_rect(table_x, row_bottom, table_w, row_h,
+                                 0.88f, 0.88f, 0.88f);
+            }
+
+            // Render cell text – cursor is temporarily manipulated per cell and
+            // restored afterwards so all cells in the same row share row_top.
+            float x_cell = table_x;
+            for (std::size_t ci = 0; ci < ncols; ++ci) {
+                const std::string& txt = (ci < row.cells.size())
+                                          ? row.cells[ci] : "";
+                if (!txt.empty()) {
+                    auto spans = merge_spans(parse_spans(txt, base));
+                    for (auto& sp : spans) { sp.size = BODY_SIZE; }
+                    float saved  = cursor_y_;
+                    cursor_y_    = row_top - pad_top;
+                    wrap_spans_in_cell(spans, lh,
+                                       x_cell + pad_x,
+                                       col_w[ci] - 2.0f * pad_x);
+                    cursor_y_ = saved;
+                }
+                x_cell += col_w[ci];
+            }
+
+            // Top border for this row.
+            page_->draw_hline(table_x, row_top, table_x + table_w,
+                              bdr, bdr_grey, bdr_grey, bdr_grey);
+
+            // Vertical column separators (drawn as thin filled rectangles).
+            {
+                float vx = table_x;
+                for (std::size_t ci = 0; ci <= ncols; ++ci) {
+                    page_->fill_rect(vx - bdr * 0.5f, row_bottom,
+                                     bdr, row_h + bdr,
+                                     bdr_grey, bdr_grey, bdr_grey);
+                    if (ci < ncols) { vx += col_w[ci]; }
+                }
+            }
+
+            cursor_y_ = row_bottom;
+        }
+
+        // Bottom border of the last row.
+        page_->draw_hline(table_x, cursor_y_, table_x + table_w,
+                          bdr, bdr_grey, bdr_grey, bdr_grey);
+
+        cursor_y_ -= BODY_SIZE * 0.5f;   // gap below table
+    }
+
 private:
+    /// Word-wrap @p spans into lines and place them starting at the absolute
+    /// position (x_start, cursor_y_), clipped to @p avail_w points wide.
+    ///
+    /// Unlike wrap_spans(), this helper does NOT call ensure_space() – it is the
+    /// caller's responsibility to have already guaranteed sufficient vertical
+    /// space for the entire row before invoking this function.
+    void wrap_spans_in_cell(const std::vector<TextSpan>& spans,
+                            float line_h,
+                            float x_start,
+                            float avail_w) {
+        if (spans.empty()) { return; }
+
+        struct Word {
+            std::string        text;
+            minipdf::FontStyle style;
+            float              size;
+        };
+
+        float space_w = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
+
+        std::vector<Word> words;
+        for (const auto& sp : spans) {
+            std::istringstream ss(sp.text);
+            std::string        tok;
+            while (std::getline(ss, tok, ' ')) {
+                if (!tok.empty()) {
+                    words.push_back({tok, sp.style, sp.size});
+                }
+            }
+        }
+        if (words.empty()) { return; }
+
+        // Build wrapped lines.
+        struct Line {
+            std::vector<Word> words;
+            float             total_w = 0.0f;
+        };
+        std::vector<Line> lines;
+        lines.push_back({});
+
+        for (const auto& w : words) {
+            float ww   = tw(w.text, w.style, w.size);
+            float need = lines.back().words.empty()
+                             ? ww
+                             : lines.back().total_w + space_w + ww;
+            if (need > avail_w && !lines.back().words.empty()) {
+                lines.push_back({});
+            }
+            float add = lines.back().words.empty() ? ww : space_w + ww;
+            lines.back().total_w += add;
+            lines.back().words.push_back(w);
+        }
+
+        // Render – no ensure_space; caller already reserved the row height.
+        for (const auto& line : lines) {
+            float x     = x_start;
+            bool  first = true;
+            for (const auto& w : line.words) {
+                if (!first) { x += space_w; }
+                page_->place_text(x, cursor_y_, w.style, w.size, w.text);
+                x += tw(w.text, w.style, w.size);
+                first = false;
+            }
+            cursor_y_ -= line_h;
+        }
+    }
+
     /// Measure the rendered width of @p text in the given style/size, using
     /// the custom font for that style when one is attached.
     [[nodiscard]] float tw(const std::string& text,
@@ -847,6 +1053,10 @@ private:
                 render_compound(blk, doc, layout, list_depth);
                 break;
 
+            case BlockContext::Table:
+                render_table(dynamic_cast<const Table&>(blk), doc, layout);
+                break;
+
             case BlockContext::Pass:
                 // Raw pass-through: emit as plain text (PDF cannot render HTML)
                 layout.paragraph(blk.source());
@@ -860,8 +1070,7 @@ private:
                 layout.page_break();
                 break;
 
-            case BlockContext::Image: {
-                // Resolve the image target to a file path.
+            case BlockContext::Image: {                // Resolve the image target to a file path.
                 // Try, in order:
                 //   1. target as-is (absolute or relative to cwd)
                 //   2. images_dir_ / target
@@ -1041,6 +1250,63 @@ private:
             }
         }
         layout.skip(4.0f);
+    }
+
+    // ── Table ─────────────────────────────────────────────────────────────────
+    //
+    // Converts the Table AST node into the PdfLayout::TableRowData intermediate
+    // representation and delegates rendering to PdfLayout::table_block().
+    //
+    // Column widths are computed proportionally from the ColumnSpec weights.
+    // When no specs are present every column receives an equal share of the
+    // content width.
+
+    void render_table(const Table& tbl, const Document& doc,
+                      PdfLayout& layout) const {
+        const auto& specs = tbl.column_specs();
+
+        // Determine number of columns.
+        std::size_t ncols = specs.size();
+        if (ncols == 0) {
+            for (const auto* sec : {&tbl.head_rows(),
+                                    &tbl.body_rows(),
+                                    &tbl.foot_rows()}) {
+                if (!sec->empty()) { ncols = sec->front().cells().size(); break; }
+            }
+        }
+        if (ncols == 0) { return; }
+
+        // Proportional column widths.
+        int total_weight = 0;
+        for (std::size_t i = 0; i < ncols; ++i) {
+            total_weight += (i < specs.size() && specs[i].width > 0)
+                                ? specs[i].width : 1;
+        }
+        std::vector<float> col_w(ncols);
+        for (std::size_t i = 0; i < ncols; ++i) {
+            int w = (i < specs.size() && specs[i].width > 0) ? specs[i].width : 1;
+            col_w[i] = layout.content_w()
+                       * static_cast<float>(w) / static_cast<float>(total_weight);
+        }
+
+        // Build row data with attribute-substituted cell text.
+        std::vector<PdfLayout::TableRowData> rows;
+        auto append = [&](const std::vector<TableRow>& src, bool header) {
+            for (const auto& row : src) {
+                PdfLayout::TableRowData rd;
+                rd.header = header;
+                for (const auto& cell : row.cells()) {
+                    rd.cells.push_back(attrs(cell->source(), doc));
+                }
+                rows.push_back(std::move(rd));
+            }
+        };
+        append(tbl.head_rows(), true);
+        append(tbl.body_rows(), false);
+        append(tbl.foot_rows(), false);
+
+        std::string title = tbl.has_title() ? attrs(tbl.title(), doc) : "";
+        layout.table_block(col_w, rows, title);
     }
 };
 

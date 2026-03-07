@@ -75,6 +75,35 @@ term two:: A second term with its associated description.
 `code term`:: Technical terms in monospace are a natural fit for
 description lists when documenting an API.
 
+== Tables
+
+Tables present structured data in rows and columns.
+When the first row is separated from the body by a blank line inside the
+`|===` delimiters it is treated as a *header row* and rendered in bold with
+a shaded background.
+Column widths are proportional; a `cols` attribute of `"1,2,1"` makes the
+middle column twice as wide as the flanking columns.
+
+[cols="1,2,1"]
+|===
+| Tool | Description | Language
+
+| asciiquack
+| Converts AsciiDoc to PDF, HTML5, DocBook 5, and man pages
+| C++17
+
+| Asciidoctor
+| The reference AsciiDoc processor and toolchain
+| Ruby
+
+| Pandoc
+| Universal document converter supporting dozens of formats
+| Haskell
+|===
+
+Inline markup such as *bold*, _italic_, and `monospace` works inside table cells
+exactly as it does in body paragraphs.
+
 == Code Blocks
 
 Source code is set in the monospace font with a light grey background.
