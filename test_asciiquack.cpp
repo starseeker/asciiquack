@@ -557,9 +557,69 @@ static void test_html5_listing_block() {
         "----\n");
     EXPECT_CONTAINS(out, "class=\"listingblock\"");
     EXPECT_CONTAINS(out, "language-python");
-    EXPECT_CONTAINS(out, "print(");
+    // "print" and "hello" must appear in the output regardless of whether
+    // syntax highlighting is active (they may be inside <h-> spans when it is).
+    EXPECT_CONTAINS(out, "print");
+    EXPECT_CONTAINS(out, "hello");
     end_test();
 }
+
+#ifdef ASCIIQUACK_USE_ULIGHT
+static void test_html5_highlighting_python() {
+    begin_test("html5: ulight syntax highlighting – Python");
+    std::string out = html(
+        "[source,python]\n"
+        "----\n"
+        "x = 42\n"
+        "----\n");
+    // µlight should emit <h-> spans for at least the numeric literal.
+    EXPECT_CONTAINS(out, "data-h=");
+    EXPECT_CONTAINS(out, "42");
+    end_test();
+}
+
+static void test_html5_highlighting_cpp() {
+    begin_test("html5: ulight syntax highlighting – C++");
+    std::string out = html(
+        "[source,cpp]\n"
+        "----\n"
+        "int main() { return 0; }\n"
+        "----\n");
+    EXPECT_CONTAINS(out, "data-h=kw_type");  // "int" is a type keyword
+    EXPECT_CONTAINS(out, "data-h=kw_ctrl");  // "return" is a control keyword
+    EXPECT_CONTAINS(out, "data-h=num");      // "0" is a number
+    end_test();
+}
+
+static void test_html5_highlighting_unknown_lang() {
+    begin_test("html5: ulight falls back for unknown language");
+    // "cobol" is not in µlight; should render as plain verbatim HTML.
+    std::string out = html(
+        "[source,cobol]\n"
+        "----\n"
+        "DISPLAY 'HELLO'.\n"
+        "----\n");
+    EXPECT_CONTAINS(out, "language-cobol");
+    // No µlight spans – plain HTML-escaped content.
+    EXPECT_CONTAINS(out, "DISPLAY");
+    end_test();
+}
+
+static void test_html5_highlighting_html_escaping() {
+    begin_test("html5: ulight HTML-escapes source content");
+    std::string out = html(
+        "[source,cpp]\n"
+        "----\n"
+        "if (a < b && b > 0) {}\n"
+        "----\n");
+    // Raw < and & must be escaped in the output.
+    EXPECT_NOT_CONTAINS(out, " < ");
+    EXPECT_NOT_CONTAINS(out, " && ");
+    EXPECT_CONTAINS(out, "&lt;");
+    EXPECT_CONTAINS(out, "&amp;&amp;");
+    end_test();
+}
+#endif  // ASCIIQUACK_USE_ULIGHT
 
 static void test_html5_literal_block() {
     begin_test("html5: literal block");
@@ -3009,6 +3069,12 @@ int main(int argc, char* argv[]) {
     test_html5_section();
     test_html5_section_id();
     test_html5_listing_block();
+#ifdef ASCIIQUACK_USE_ULIGHT
+    test_html5_highlighting_python();
+    test_html5_highlighting_cpp();
+    test_html5_highlighting_unknown_lang();
+    test_html5_highlighting_html_escaping();
+#endif
     test_html5_literal_block();
     test_html5_ulist();
     test_html5_olist();
