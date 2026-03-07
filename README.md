@@ -62,6 +62,7 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 
 ### Other dependencies
 
-- µlight (https://github.com/eisenwave/ulight) is used for syntax highlighting if the compiler supports C++23
-- Command line options are supported via https://github.com/jarro2783/cxxopts
-- minimal subset of libharu: https://github.com/libharu/libharu
+- Syntax highlighting (if C++23 available): µlight (https://github.com/eisenwave/ulight)
+- Command line options: cxxopts (https://github.com/jarro2783/cxxopts)
+- PDF writing: minimal subset of libharu (https://github.com/libharu/libharu)
+- Font support: struetype fork of stb_truetype (https://github.com/starseeker/struetype)
