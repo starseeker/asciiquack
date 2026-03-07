@@ -1719,22 +1719,25 @@ std::shared_ptr<Table> Parser::parse_table(
             ColumnSpec spec;
 
             // 1. Check for a repeat prefix "N*" (e.g., "3*>1m" or "3*")
+            // Distinguish: "3*>" (repeat=3, align=right) vs "3*1" (width=3, proportional)
             int repeat = 1;
             std::size_t ci = 0;
             if (ci < col.size() && std::isdigit(static_cast<unsigned char>(col[ci]))) {
-                std::size_t digit_end = ci;
-                while (digit_end < col.size() && std::isdigit(static_cast<unsigned char>(col[digit_end]))) {
-                    ++digit_end;
+                // Find the position one past the leading digit run
+                std::size_t star_pos = ci;
+                while (star_pos < col.size() && std::isdigit(static_cast<unsigned char>(col[star_pos]))) {
+                    ++star_pos;
                 }
-                if (digit_end < col.size() && col[digit_end] == '*') {
-                    bool after_is_nondigit = (digit_end + 1 >= col.size()) ||
-                                             !std::isdigit(static_cast<unsigned char>(col[digit_end + 1]));
-                    if (after_is_nondigit) {
-                        // Repeat prefix: "3*spec" or "3*" (empty spec → default)
-                        repeat = std::stoi(col.substr(0, digit_end));
-                        col    = col.substr(digit_end + 1);
-                        ci = 0;
-                    }
+                // A repeat prefix looks like "N*" where what follows is either
+                // end-of-string or a non-digit (alignment char, style, etc.).
+                bool is_repeat_prefix =
+                    star_pos < col.size() && col[star_pos] == '*' &&
+                    (star_pos + 1 >= col.size() ||
+                     !std::isdigit(static_cast<unsigned char>(col[star_pos + 1])));
+                if (is_repeat_prefix) {
+                    repeat = std::stoi(col.substr(0, star_pos));
+                    col    = col.substr(star_pos + 1);
+                    ci = 0;
                 }
             }
 
