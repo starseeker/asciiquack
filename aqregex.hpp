@@ -1,20 +1,28 @@
 /// @file aqregex.hpp
 /// @brief Compile-time switchable regex backend for asciiquack.
 ///
-/// Select the backend by passing a CMake option (or -D compiler flag):
+/// Three backends, selected by CMake (see CMakeLists.txt):
 ///
-///   -DAQREGEX_USE_PCRE2  –  PCRE2 (recommended; significant speed-up over
-///                           GCC's std::regex implementation)
-///   (default)            –  std::regex (no additional dependencies)
+///   AQREGEX_USE_PCRE2 + AQREGEX_PCRE2_SYSTEM
+///       System-installed libpcre2-8 (includes JIT; fastest).
+///       CMake: -DUSE_PCRE2=ON  (and libpcre2-dev is found)
 ///
-/// RE2 is not provided as a drop-in backend because several patterns in
-/// asciiquack rely on features RE2 intentionally omits for safety:
-///   - Backreferences in patterns  e.g. ([-*_]) … \1
-///   - Lookahead assertions        e.g. (?=[^*\w]|$)
-///   - Negative lookahead          e.g. (?!//[^/])
-/// Those patterns would need non-trivial rewrites that risk behaviour changes.
-/// RE2 remains an option for any future green-field code that avoids those
-/// features; see TODO.md for benchmarking notes.
+///   AQREGEX_USE_PCRE2  (without AQREGEX_PCRE2_SYSTEM)
+///       Embedded PCRE2 subset in vendor/pcre2/ (no JIT; ~3× faster than
+///       std::regex; zero external dependency).
+///       CMake: -DUSE_PCRE2=ON  (when libpcre2-dev is absent)
+///              or -DUSE_SYSTEM_PCRE2=OFF  (to force embedded even when the
+///              system library is present)
+///
+///   (neither)
+///       std::regex fallback (slowest; always available).
+///       CMake: -DUSE_PCRE2=OFF
+///
+/// RE2 is intentionally not provided as a drop-in backend because several
+/// patterns in asciiquack rely on features RE2 omits for safety:
+///   - Backreferences           e.g. ([-*_]) … \1
+///   - Positive lookahead       e.g. (?=[^*\w]|$)
+///   - Negative lookahead       e.g. (?!//[^/])
 ///
 /// Public interface (namespace aqrx):
 ///   aqrx::regex            – compiled pattern
@@ -22,18 +30,22 @@
 ///   aqrx::sregex_iterator  – forward iterator over all non-overlapping matches
 ///   aqrx::regex_replace()  – global substitution
 ///   aqrx::regex_match()    – full-string match
-///   aqrx::ECMAScript       – flag constant (ignored in PCRE2 mode)
-///   aqrx::optimize         – flag constant (JIT always on in PCRE2 mode)
+///   aqrx::ECMAScript       – flag constant (no-op in PCRE2 mode)
+///   aqrx::optimize         – flag constant (enables JIT in system-PCRE2 mode)
 
 #pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PCRE2 backend
+// PCRE2 backend  (system library OR embedded vendor subset)
 // ─────────────────────────────────────────────────────────────────────────────
 #ifdef AQREGEX_USE_PCRE2
 
 #define PCRE2_CODE_UNIT_WIDTH 8
-#include <pcre2.h>
+#ifdef AQREGEX_PCRE2_SYSTEM
+#  include <pcre2.h>   // system-installed header
+#else
+#  include "vendor/pcre2/pcre2.h"   // embedded vendor header
+#endif
 
 #include <cstddef>
 #include <cstdint>
@@ -86,7 +98,7 @@ public:
     regex() = default;
 
     /// Compile @p pattern.  @p flags is accepted for API compatibility but
-    /// ignored; PCRE2 is always used with JIT enabled.
+    /// ignored; JIT is enabled automatically for the system-library backend.
     explicit regex(const std::string& pattern, unsigned /*flags*/ = 0) {
         compile(pattern.c_str());
     }
@@ -131,8 +143,13 @@ private:
                 " in pattern: " + pattern);
         }
         pcre2_pattern_info_8(code_, PCRE2_INFO_CAPTURECOUNT, &capture_count_);
-        // JIT-compile for speed; non-fatal if JIT is unavailable.
+#ifdef AQREGEX_PCRE2_SYSTEM
+        // JIT-compile for speed.  Non-fatal: JIT may be unavailable on some
+        // platforms; the interpreter fallback is used in that case.
         pcre2_jit_compile_8(code_, PCRE2_JIT_COMPLETE);
+#endif
+        // Embedded PCRE2 is built without SUPPORT_JIT so we skip the JIT call;
+        // pcre2_jit_compile_8 would just return PCRE2_ERROR_JIT_BADOPTION.
     }
 };
 
