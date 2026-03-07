@@ -25,3 +25,6 @@ Makefile
 *.exe
 asciiquack
 build_sys/
+build_test/
+build_no_ulight/
+ulight_cxx23_check/
