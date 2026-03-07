@@ -11,11 +11,11 @@
 
 #include "document.hpp"
 #include "substitutors.hpp"
+#include "outbuf.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <regex>
-#include <sstream>
+#include "aqregex.hpp"
 #include <string>
 #include <unordered_map>
 
@@ -34,9 +34,9 @@ public:
         // Reset per-conversion state
         counters_.clear();
         footnotes_.clear();
-        std::ostringstream out;
+        OutputBuffer out;
         convert_document(doc, out);
-        return out.str();
+        return out.release();
     }
 
 private:
@@ -60,7 +60,7 @@ private:
 
     // ── Document structure ────────────────────────────────────────────────────
 
-    void convert_document(const Document& doc, std::ostringstream& out) const {
+    void convert_document(const Document& doc, OutputBuffer& out) const {
         bool embedded = doc.has_attr("embedded");
 
         if (!embedded) {
@@ -271,7 +271,7 @@ private:
     // ── Generic block dispatcher ───────────────────────────────────────────────
 
     void convert_block(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         switch (block.context()) {
             case BlockContext::Section:
                 convert_section(dynamic_cast<const Section&>(block), doc, out);
@@ -370,7 +370,7 @@ private:
     // ── Section ───────────────────────────────────────────────────────────────
 
     void convert_section(const Section& sect, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         int level = sect.level();  // 0 = document title level, 1 = h2, …
         // level 1 (==) → class="sect1", <h2>
         // level 2 (===) → class="sect2", <h3>
@@ -422,7 +422,7 @@ private:
     // ── Paragraph ─────────────────────────────────────────────────────────────
 
     void convert_paragraph(const Block& block, const Document& doc,
-                           std::ostringstream& out) const {
+                           OutputBuffer& out) const {
         std::string role = block.role();
         out << "<div class=\"paragraph";
         if (!role.empty()) { out << " " << role; }
@@ -439,7 +439,7 @@ private:
     // ── Listing / source block ─────────────────────────────────────────────────
 
     void convert_listing(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         const std::string& style = block.style();
         // Language: explicit "language" attr takes precedence, then the second
         // positional attribute (set by [source,<lang>] block attribute lines).
@@ -476,7 +476,7 @@ private:
     // ── Literal block ──────────────────────────────────────────────────────────
 
     void convert_literal(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         out << "<div class=\"literalblock\">\n";
         if (block.has_title()) {
             out << "<div class=\"title\">" << subs(block.title(), doc) << "</div>\n";
@@ -490,7 +490,7 @@ private:
     // ── Example block ──────────────────────────────────────────────────────────
 
     void convert_example(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         out << "<div class=\"exampleblock\">\n";
         if (block.has_title()) {
             out << "<div class=\"title\">" << subs(block.title(), doc) << "</div>\n";
@@ -506,7 +506,7 @@ private:
     // ── Quote / verse ──────────────────────────────────────────────────────────
 
     void convert_quote(const Block& block, const Document& doc,
-                       std::ostringstream& out, bool verse) const {
+                       OutputBuffer& out, bool verse) const {
         const std::string& attribution = block.attr("attribution");
         const std::string& citetitle   = block.attr("citetitle");
 
@@ -544,7 +544,7 @@ private:
     // ── Sidebar ────────────────────────────────────────────────────────────────
 
     void convert_sidebar(const Block& block, const Document& doc,
-                         std::ostringstream& out) const {
+                         OutputBuffer& out) const {
         out << "<div class=\"sidebarblock\">\n"
             << "<div class=\"content\">\n";
         if (block.has_title()) {
@@ -560,7 +560,7 @@ private:
     // ── Admonition ────────────────────────────────────────────────────────────
 
     void convert_admonition(const Block& block, const Document& doc,
-                            std::ostringstream& out) const {
+                            OutputBuffer& out) const {
         const std::string& name = block.attr("name", "note");
 
         // Determine caption priority:
@@ -626,7 +626,7 @@ private:
     // ── Unordered list ────────────────────────────────────────────────────────
 
     void convert_ulist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& role  = list.role();
         const std::string& style = list.style();  // checklist, etc.
 
@@ -655,7 +655,7 @@ private:
     // ── Ordered list ──────────────────────────────────────────────────────────
 
     void convert_olist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         // Determine CSS class from ordered_style
         std::string style_class;
         switch (list.ordered_style()) {
@@ -694,7 +694,7 @@ private:
     // ── Description list ──────────────────────────────────────────────────────
 
     void convert_dlist(const List& list, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         out << "<div class=\"dlist\">\n";
         if (list.has_title()) {
             out << "<div class=\"title\">" << subs(list.title(), doc) << "</div>\n";
@@ -722,7 +722,7 @@ private:
     // ── Callout list ──────────────────────────────────────────────────────────
 
     void convert_colist(const List& list, const Document& doc,
-                        std::ostringstream& out) const {
+                        OutputBuffer& out) const {
         out << "<div class=\"colist arabic\">\n";
         out << "<ol>\n";
         int n = 1;
@@ -741,7 +741,7 @@ private:
     // ── Table ──────────────────────────────────────────────────────────────────
 
     void convert_table(const Table& table, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& role = table.role();
 
         out << "<table class=\"tableblock frame-all grid-all stretch";
@@ -852,7 +852,7 @@ private:
     // ── Image block ────────────────────────────────────────────────────────────
 
     void convert_image(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& target = block.attr("target");
         const std::string& alt    = block.attr("alt");
         const std::string& width  = block.attr("width");
@@ -881,7 +881,7 @@ private:
     // ── Video block ────────────────────────────────────────────────────────────
 
     void convert_video(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& target = block.attr("target");
         const std::string& width  = block.attr("width");
         const std::string& height = block.attr("height");
@@ -912,7 +912,7 @@ private:
     // ── Audio block ────────────────────────────────────────────────────────────
 
     void convert_audio(const Block& block, const Document& doc,
-                       std::ostringstream& out) const {
+                       OutputBuffer& out) const {
         const std::string& target = block.attr("target");
         const std::string& role   = block.role();
 
@@ -939,7 +939,7 @@ private:
     /// to its inline reference marker.
     void convert_footnotes(const std::vector<FootnoteEntry>& footnotes,
                            const Document& doc,
-                           std::ostringstream& out) const {
+                           OutputBuffer& out) const {
         if (footnotes.empty()) { return; }
         out << "<div id=\"footnotes\">\n"
             << "<hr>\n";
@@ -968,16 +968,16 @@ private:
     {
         // After verbatim() the < and > are already HTML-escaped.
         // Match &lt;N&gt; where N is one or more digits.
-        static const std::regex co_rx(R"(&lt;(\d+)&gt;)",
-                                      std::regex::ECMAScript | std::regex::optimize);
+        static const aqrx::regex co_rx(R"(&lt;(\d+)&gt;)",
+                                      aqrx::ECMAScript | aqrx::optimize);
         std::string result;
         result.reserve(escaped_source.size());
-        auto begin = std::sregex_iterator(escaped_source.begin(),
+        auto begin = aqrx::sregex_iterator(escaped_source.begin(),
                                           escaped_source.end(), co_rx);
-        auto end   = std::sregex_iterator{};
+        auto end   = aqrx::sregex_iterator{};
         std::size_t last = 0;
         for (auto it = begin; it != end; ++it) {
-            const std::smatch& m = *it;
+            const aqrx::smatch& m = *it;
             result.append(escaped_source, last,
                           static_cast<std::size_t>(m.position()) - last);
             std::string num = m[1].str();
@@ -1010,7 +1010,7 @@ private:
     /// and also `<docname>-docinfo.html` / `<docname>-docinfo-footer.html`.
     void inject_docinfo(const Document& doc,
                         const std::string& location,
-                        std::ostringstream& out) const {
+                        OutputBuffer& out) const {
         // Only inject in unsafe mode
         if (doc.safe_mode() != SafeMode::Unsafe &&
             doc.safe_mode() != SafeMode::Server) {
@@ -1049,7 +1049,7 @@ private:
     // ── Floating title ─────────────────────────────────────────────────────────
 
     void convert_floating_title(const Block& block, const Document& doc,
-                                std::ostringstream& out) const {
+                                OutputBuffer& out) const {
         int level = 1;
         const std::string& lv_str = block.attr("level");
         if (!lv_str.empty()) {
@@ -1065,7 +1065,7 @@ private:
 
     // ── Table of Contents ──────────────────────────────────────────────────────
 
-    void convert_toc(const Document& doc, std::ostringstream& out) const {
+    void convert_toc(const Document& doc, OutputBuffer& out) const {
         const auto& entries = doc.toc_entries();
         if (entries.empty()) { return; }
 

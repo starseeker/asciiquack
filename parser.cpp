@@ -21,7 +21,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
@@ -107,10 +106,10 @@ std::optional<std::pair<std::string,std::string>>
 try_parse_attribute_entry(const std::string& line) {
     // Pattern: :name: optional-value
     //          :!name: (unset)
-    static const std::regex rx(R"(^:(!?[\w][\w\-' ]*):(?:[ \t]+(.*))?$)",
-                                std::regex::ECMAScript | std::regex::optimize);
-    std::smatch m;
-    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+    static const aqrx::regex rx(R"(^:(!?[\w][\w\-' ]*):(?:[ \t]+(.*))?$)",
+                                aqrx::ECMAScript | aqrx::optimize);
+    aqrx::smatch m;
+    if (!aqrx::regex_match(line, m, rx)) { return std::nullopt; }
 
     std::string name  = m[1].str();
     std::string value = m[2].matched ? m[2].str() : "";
@@ -211,42 +210,42 @@ struct ListMatch {
 std::optional<ListMatch> match_list_item(const std::string& line) {
     // Unordered: optional leading whitespace, then - or * (1-5) or • (U+2022)
     {
-        static const std::regex rx(
+        static const aqrx::regex rx(
             R"(^([ \t]*)(-|\*{1,5})[ \t]+(.+)$)",
-            std::regex::ECMAScript | std::regex::optimize);
-        std::smatch m;
-        if (std::regex_match(line, m, rx)) {
+            aqrx::ECMAScript | aqrx::optimize);
+        aqrx::smatch m;
+        if (aqrx::regex_match(line, m, rx)) {
             return ListMatch{ListType::Unordered, m[2].str(), m[3].str()};
         }
     }
     // Ordered: optional leading whitespace, then .{1,5} or 1. or a. or A. or i) or I)
     {
-        static const std::regex rx(
+        static const aqrx::regex rx(
             R"(^([ \t]*)(\.*\.|[0-9]+\.|[a-zA-Z]\.|[IVXivx]+\))[ \t]+(.+)$)",
-            std::regex::ECMAScript | std::regex::optimize);
-        std::smatch m;
-        if (std::regex_match(line, m, rx)) {
+            aqrx::ECMAScript | aqrx::optimize);
+        aqrx::smatch m;
+        if (aqrx::regex_match(line, m, rx)) {
             return ListMatch{ListType::Ordered, m[2].str(), m[3].str()};
         }
     }
     // Description: term:: [optional text]  or  term;;
     // Guard: exclude lines that start with '|' (table rows/separators – Bug #7)
     if (line.empty() || line[0] != '|') {
-        static const std::regex rx(
+        static const aqrx::regex rx(
             R"(^(?!//[^/])([ \t]*)([^ \t].+?)(:{2,4}|;;)(?:$|[ \t]+(.+)$))",
-            std::regex::ECMAScript | std::regex::optimize);
-        std::smatch m;
-        if (std::regex_match(line, m, rx)) {
+            aqrx::ECMAScript | aqrx::optimize);
+        aqrx::smatch m;
+        if (aqrx::regex_match(line, m, rx)) {
             return ListMatch{ListType::Description, m[3].str(), m[4].matched ? m[4].str() : ""};
         }
     }
     // Callout: <N> text or <.> text
     {
-        static const std::regex rx(
+        static const aqrx::regex rx(
             R"(^<(\d+|\.)>[ \t]+(.+)$)",
-            std::regex::ECMAScript | std::regex::optimize);
-        std::smatch m;
-        if (std::regex_match(line, m, rx)) {
+            aqrx::ECMAScript | aqrx::optimize);
+        aqrx::smatch m;
+        if (aqrx::regex_match(line, m, rx)) {
             return ListMatch{ListType::Callout, m[1].str(), m[2].str()};
         }
     }
@@ -262,11 +261,11 @@ struct ImageMacro {
 };
 
 std::optional<ImageMacro> match_block_image(const std::string& line) {
-    static const std::regex rx(
+    static const aqrx::regex rx(
         R"(^image::(\S[^\[]*)\[(.*)\]$)",
-        std::regex::ECMAScript | std::regex::optimize);
-    std::smatch m;
-    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+        aqrx::ECMAScript | aqrx::optimize);
+    aqrx::smatch m;
+    if (!aqrx::regex_match(line, m, rx)) { return std::nullopt; }
     ImageMacro img;
     img.target = m[1].str();
     std::string attr_str = "[" + m[2].str() + "]";
@@ -284,11 +283,11 @@ struct MediaMacro {
 };
 
 std::optional<MediaMacro> match_block_media(const std::string& line) {
-    static const std::regex rx(
+    static const aqrx::regex rx(
         R"(^(video|audio)::(\S[^\[]*)\[(.*)\]$)",
-        std::regex::ECMAScript | std::regex::optimize);
-    std::smatch m;
-    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+        aqrx::ECMAScript | aqrx::optimize);
+    aqrx::smatch m;
+    if (!aqrx::regex_match(line, m, rx)) { return std::nullopt; }
     MediaMacro mm;
     mm.context = (m[1].str() == "video") ? BlockContext::Video : BlockContext::Audio;
     mm.target  = m[2].str();
@@ -401,13 +400,13 @@ bool evaluate_ifeval(const std::string& expr, const Document& doc) {
     trim(expanded);
 
     // Tokenise: find the operator
-    static const std::regex op_rx(R"(\s*(==|!=|<=|>=|<|>)\s*)",
-                                   std::regex::ECMAScript | std::regex::optimize);
-    std::sregex_iterator it(expanded.begin(), expanded.end(), op_rx);
-    std::sregex_iterator end_it;
+    static const aqrx::regex op_rx(R"(\s*(==|!=|<=|>=|<|>)\s*)",
+                                   aqrx::ECMAScript | aqrx::optimize);
+    aqrx::sregex_iterator it(expanded.begin(), expanded.end(), op_rx);
+    aqrx::sregex_iterator end_it;
     if (it == end_it) { return false; }  // no operator found
 
-    const std::smatch& m = *it;
+    const aqrx::smatch& m = *it;
     std::string lhs_raw = expanded.substr(0, static_cast<std::size_t>(m.position()));
     std::string op      = m[1].str();
     std::string rhs_raw = expanded.substr(static_cast<std::size_t>(m.position()) +
@@ -540,9 +539,9 @@ bool is_thematic_break(const std::string& line) noexcept {
         if (all_apos) { return true; }
     }
     // Markdown-style: --- or * * * or _ _ _
-    static const std::regex rx(R"(^ {0,3}([-*_])( *)\1\2\1$)",
-                                std::regex::ECMAScript | std::regex::optimize);
-    return std::regex_match(line, rx);
+    static const aqrx::regex rx(R"(^ {0,3}([-*_])( *)\1\2\1$)",
+                                aqrx::ECMAScript | aqrx::optimize);
+    return aqrx::regex_match(line, rx);
 }
 
 bool is_page_break(const std::string& line) noexcept {
@@ -566,10 +565,10 @@ bool looks_like_author_line(const std::string& line) {
             return false;
         }
     }
-    static const std::regex rx(
+    static const aqrx::regex rx(
         R"(^(\w[\w\-'.]*)(?: +(\w[\w\-'.]*))?(?: +(\w[\w\-'.]*))?(?: +<([^>]+)>)?$)",
-        std::regex::ECMAScript | std::regex::optimize);
-    return std::regex_match(line, rx);
+        aqrx::ECMAScript | aqrx::optimize);
+    return aqrx::regex_match(line, rx);
 }
 
 std::vector<AuthorInfo> do_parse_author_line(const std::string& line) {
@@ -581,11 +580,11 @@ std::vector<AuthorInfo> do_parse_author_line(const std::string& line) {
         std::string part = (sep != std::string::npos) ? rest.substr(0, sep) : rest;
         trim(part);
 
-        static const std::regex rx(
+        static const aqrx::regex rx(
             R"(^(\w[\w\-'.]*)(?: +(\w[\w\-'.]*))?(?: +(\w[\w\-'.]*))?(?: +<([^>]+)>)?$)",
-            std::regex::ECMAScript | std::regex::optimize);
-        std::smatch m;
-        if (std::regex_match(part, m, rx)) {
+            aqrx::ECMAScript | aqrx::optimize);
+        aqrx::smatch m;
+        if (aqrx::regex_match(part, m, rx)) {
             AuthorInfo a;
             a.firstname  = m[1].str();
             // Decide which captures are middle vs last
@@ -608,10 +607,10 @@ std::vector<AuthorInfo> do_parse_author_line(const std::string& line) {
 bool looks_like_revision_line(const std::string& line) {
     if (line.empty()) { return false; }
     // v1.0 or 1.0,date  or just a date
-    static const std::regex rx(
+    static const aqrx::regex rx(
         R"(^v?\d[\w.\-]*(?:,.*)?$|^\d{4}-\d{2}-\d{2}$)",
-        std::regex::ECMAScript | std::regex::optimize);
-    return std::regex_match(line, rx);
+        aqrx::ECMAScript | aqrx::optimize);
+    return aqrx::regex_match(line, rx);
 }
 
 RevisionInfo do_parse_revision_line(const std::string& line) {
@@ -637,8 +636,8 @@ RevisionInfo do_parse_revision_line(const std::string& line) {
         }
     } else {
         // Could be just a version or just a date
-        static const std::regex date_rx(R"(^\d{4}-\d{2}-\d{2}$)");
-        if (std::regex_match(s, date_rx)) {
+        static const aqrx::regex date_rx(R"(^\d{4}-\d{2}-\d{2}$)");
+        if (aqrx::regex_match(s, date_rx)) {
             rev.date = s;
         } else {
             rev.number = s;
@@ -767,10 +766,10 @@ void Parser::parse_document_header(Reader& reader, Document& doc) {
             // For doctype: manpage, parse "name(volnum)" from the title
             // e.g. "git-commit(1)" → manname="git-commit", manvolnum="1"
             if (doc.doctype() == "manpage") {
-                static const std::regex manpage_rx(R"(^(.+?)\((\d+[a-zA-Z0-9]*)\)$)",
-                    std::regex::ECMAScript | std::regex::optimize);
-                std::smatch mm;
-                if (std::regex_match(title, mm, manpage_rx)) {
+                static const aqrx::regex manpage_rx(R"(^(.+?)\((\d+[a-zA-Z0-9]*)\)$)",
+                    aqrx::ECMAScript | aqrx::optimize);
+                aqrx::smatch mm;
+                if (aqrx::regex_match(title, mm, manpage_rx)) {
                     doc.set_attr("manname",   mm[1].str());
                     doc.set_attr("manvolnum", mm[2].str());
                 }
@@ -936,9 +935,9 @@ std::string Parser::section_title_text(const std::string& line) {
     while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) { ++i; }
     std::string text = line.substr(i);
     // Strip optional trailing '== ...' markers
-    static const std::regex trailing_rx(R"([ \t]+=+\s*$)",
-                                        std::regex::ECMAScript | std::regex::optimize);
-    text = std::regex_replace(text, trailing_rx, "");
+    static const aqrx::regex trailing_rx(R"([ \t]+=+\s*$)",
+                                        aqrx::ECMAScript | aqrx::optimize);
+    text = aqrx::regex_replace(text, trailing_rx, "");
     return text;
 }
 

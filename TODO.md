@@ -150,21 +150,45 @@ Bold, italic, and monospace text continue to use the PDF base-14 fonts
 
 ## Performance Notes
 
-Benchmark: 1000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
-(335 lines, ~9 KB), 10-iteration warm-up, `-O2`.
+Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
+(335 lines, ~9 KB), 10-iteration warm-up, GCC 13 `-O2`.
 
-| Implementation | Avg / iter | Conv / sec |
-|---|---|---|
-| Ruby Asciidoctor 2.1.0 (Ruby 3.2.3) | ~2.3 ms | ~440 |
-| asciiquack C++17 / GCC 13 -O2 | ~2.9 ms | ~345 |
+| Implementation | Avg / iter | Conv / sec | Notes |
+|---|---|---|---|
+| Ruby Asciidoctor 2.1.0 (Ruby 3.2.3) | ~2.3 ms | ~440 | reference |
+| asciiquack / `std::regex` (GCC 13) | ~3.2 ms | ~310 | baseline |
+| asciiquack / PCRE2 | ~0.65 ms | ~1 530 | **~5× faster than Ruby** |
 
-The C++ port is currently ~25–35 % slower than Ruby.  Root causes:
+### What was done
 
-- **`std::regex`** – GCC's implementation is slower than RE2/PCRE2.
-  `sub_quotes`, `sub_macros`, and `sub_replacements` dominate profiling.
-- **`shared_ptr` overhead** – atomic ref-count increments on every AST node.
-- **`ostringstream` allocations** – pre-reserving a `std::string` buffer
-  in the converters would help.
+- **`std::regex` → PCRE2** – Replaced GCC's slow `std::regex` with PCRE2
+  via a thin `aqregex.hpp` adapter.  The adapter falls back to `std::regex`
+  when PCRE2 is unavailable (`-DUSE_PCRE2=OFF`).  This single change
+  accounts for almost all of the gain.
+
+- **`OutputBuffer` instead of `std::ostringstream`** – The HTML5, DocBook5,
+  and man-page converters now use a pre-reserved `std::string` sink
+  (`outbuf.hpp`) instead of `std::ostringstream`.  This eliminates virtual
+  dispatch on every `<<` call and avoids the repeated buffer doublings that
+  ostringstream incurs for large documents.
+
+### Why not RE2?
+
+RE2 was evaluated but cannot serve as a drop-in backend because several
+patterns require features RE2 intentionally omits:
+
+- **Backreferences in patterns** – e.g. `([-*_])…\1` (thematic-break)
+- **Lookahead assertions** – e.g. `(?=[^*\w]|$)` (constrained quotes)
+- **Negative lookahead** – e.g. `(?!//[^/])` (description-list guard)
+
+PCRE2 is equally fast and supports the full pattern set.
+
+### Remaining opportunity
+
+- **`shared_ptr` → `unique_ptr`** – The AST is a strict ownership tree;
+  converting to `unique_ptr` would eliminate atomic ref-count traffic on
+  every node.  Significant API refactoring required across parser, document
+  model, and all converters.
 
 ---
 
