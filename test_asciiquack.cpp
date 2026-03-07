@@ -3633,7 +3633,7 @@ static void test_minipdf_png_from_file_loads() {
         EXPECT(img->height() == 1024);
         EXPECT(img->channels() == 3);
         EXPECT(img->encoding() == minipdf::PdfImage::Encoding::Raw);
-        // Raw 1024×1024 RGB = 3 145 728 bytes
+        // Raw 1024×1024 RGB = 3,145,728 bytes
         EXPECT(img->data().size() == 1024u * 1024u * 3u);
     }
 

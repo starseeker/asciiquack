@@ -522,7 +522,7 @@ public:
 
         float disp_h = (hint_h > 0.0f) ? hint_h : disp_w * aspect;
 
-        ensure_space(disp_h + BODY_SIZE);  // +1 line for spacing
+        ensure_space(disp_h + BODY_SIZE);  // image height + one body line below
         if (disp_h > (cursor_y_ - MARGIN_BOTTOM)) {
             // Still too tall after a possible page break; clamp to page
             disp_h = cursor_y_ - MARGIN_BOTTOM - BODY_SIZE;
@@ -891,16 +891,19 @@ private:
                     if (resolved.empty()) { resolved = target; }
                 }
 
-                // Parse optional width/height hints from block attributes
+                // Parse optional width/height hints from block attributes.
+                // Invalid or non-numeric values are silently treated as 0 (auto).
                 float hint_w = 0.0f, hint_h = 0.0f;
                 {
                     const std::string& ws = blk.attr("width");
                     const std::string& hs = blk.attr("height");
                     if (!ws.empty()) {
-                        try { hint_w = std::stof(ws); } catch (...) {}
+                        try { hint_w = std::stof(ws); }
+                        catch (...) { hint_w = 0.0f; }  // non-numeric → auto
                     }
                     if (!hs.empty()) {
-                        try { hint_h = std::stof(hs); } catch (...) {}
+                        try { hint_h = std::stof(hs); }
+                        catch (...) { hint_h = 0.0f; }  // non-numeric → auto
                     }
                 }
 
