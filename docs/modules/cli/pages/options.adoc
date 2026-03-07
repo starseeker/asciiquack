@@ -1,3 +1,0 @@
-= CLI Options
-
-See xref:man1/asciidoctor.adoc#options[`asciidoctor` options].

@@ -210,10 +210,27 @@ static void test_sub_attributes() {
 
     EXPECT_EQ(asciiquack::sub_attributes("name: {project}", attrs), "name: asciiquack");
     EXPECT_EQ(asciiquack::sub_attributes("{version}", attrs), "1.0");
-    // Unknown attribute is left as-is
+    // Unknown attribute is left as-is (default skip policy)
     EXPECT_EQ(asciiquack::sub_attributes("{unknown}", attrs), "{unknown}");
     // No brace → fast path
     EXPECT_EQ(asciiquack::sub_attributes("hello", attrs), "hello");
+
+    // attribute-missing: drop removes the reference
+    std::unordered_map<std::string, std::string> drop_attrs = {
+        {"project", "asciiquack"},
+        {"attribute-missing", "drop"},
+    };
+    EXPECT_EQ(asciiquack::sub_attributes("{project}", drop_attrs), "asciiquack");
+    EXPECT_EQ(asciiquack::sub_attributes("{missing}", drop_attrs), "");
+    EXPECT_EQ(asciiquack::sub_attributes("a {missing} b", drop_attrs), "a  b");
+
+    // attribute-missing: warn leaves as-is (warning is written to stderr, not tested here)
+    std::unordered_map<std::string, std::string> warn_attrs = {
+        {"project", "asciiquack"},
+        {"attribute-missing", "warn"},
+    };
+    EXPECT_EQ(asciiquack::sub_attributes("{project}", warn_attrs), "asciiquack");
+    EXPECT_EQ(asciiquack::sub_attributes("{missing}", warn_attrs), "{missing}");
 
     end_test();
 }
@@ -2343,6 +2360,30 @@ static void test_section_nesting_warning() {
     end_test();
 }
 
+static void test_unclosed_block_warning() {
+    begin_test("parser: unclosed block emits warning to stderr");
+
+    std::ostringstream err_buf;
+    std::streambuf* old_err = std::cerr.rdbuf(err_buf.rdbuf());
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "====\n"
+        "An example block that is never closed.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    (void)doc;
+
+    std::cerr.rdbuf(old_err);
+
+    std::string errmsg = err_buf.str();
+    EXPECT_CONTAINS(errmsg, "WARNING");
+    EXPECT_CONTAINS(errmsg, "unclosed");
+
+    end_test();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2489,6 +2530,7 @@ int main(int argc, char* argv[]) {
     test_table_col_repeat();
     test_table_col_style_h();
     test_section_nesting_warning();
+    test_unclosed_block_warning();
 
     // DocBook 5 backend tests
     std::cout << "\nDocBook 5 backend tests:\n";
