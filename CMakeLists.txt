@@ -229,6 +229,9 @@ add_executable(asciiquack
     parser.cpp
 )
 target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_definitions(asciiquack PRIVATE
+    ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
+)
 aqregex_configure(asciiquack)
 ulight_configure(asciiquack)
 
@@ -244,6 +247,9 @@ if(BUILD_TESTS)
         parser.cpp
     )
     target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_definitions(asciiquack_tests PRIVATE
+        ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
+    )
     aqregex_configure(asciiquack_tests)
     ulight_configure(asciiquack_tests)
 

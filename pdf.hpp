@@ -7,10 +7,10 @@
 /// blocks, admonition blocks, inline bold / italic / monospace text, and
 /// basic horizontal rules.
 ///
-/// An optional TrueType body font can be specified via the `pdf-font` document
-/// attribute (absolute or relative path to a .ttf file).  When provided it is
-/// embedded in the PDF and used for all regular/body text; bold, italic and
-/// monospace text continue to use the PDF base-14 fonts.
+/// Custom TrueType fonts can be specified per-style via the FontSet struct
+/// (attributes: pdf-font, pdf-font-bold, pdf-font-italic, pdf-font-bold-italic,
+/// pdf-font-mono, pdf-font-mono-bold).  When a style has no custom font the
+/// corresponding PDF base-14 fallback (Helvetica family / Courier) is used.
 ///
 /// Usage:
 ///   auto doc = Parser::parse_string(src, opts);
@@ -18,6 +18,15 @@
 ///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, true);       // A4
 ///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, false,
 ///                               "/usr/share/fonts/myfont.ttf");  // custom body font
+///
+///   asciiquack::FontSet fs;
+///   fs.regular    = "/path/to/NotoSans-Regular.ttf";
+///   fs.bold       = "/path/to/NotoSans-Bold.ttf";
+///   fs.italic     = "/path/to/NotoSans-Italic.ttf";
+///   fs.bold_italic = "/path/to/NotoSans-BoldItalic.ttf";
+///   fs.mono       = "/path/to/NotoSansMono-Regular.ttf";
+///   fs.mono_bold  = "/path/to/NotoSansMono-Bold.ttf";
+///   std::string pdf_bytes = asciiquack::convert_to_pdf(*doc, false, fs);
 
 #pragma once
 
@@ -26,6 +35,7 @@
 #include "substitutors.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <functional>
@@ -34,6 +44,22 @@
 #include <vector>
 
 namespace asciiquack {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Font set – paths to optional TrueType fonts for each style slot
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Paths to TrueType (.ttf) font files for each text style used in the PDF
+/// output.  Leave any field empty to fall back to the corresponding PDF
+/// base-14 font (Helvetica family for body text, Courier for monospace).
+struct FontSet {
+    std::string regular;     ///< pdf-font              – body text (F1)
+    std::string bold;        ///< pdf-font-bold         – bold text (F2)
+    std::string italic;      ///< pdf-font-italic       – italic text (F3)
+    std::string bold_italic; ///< pdf-font-bold-italic  – bold-italic text (F4)
+    std::string mono;        ///< pdf-font-mono         – monospace text (F5)
+    std::string mono_bold;   ///< pdf-font-mono-bold    – bold monospace text (F6)
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inline text spans
@@ -254,7 +280,6 @@ public:
     static constexpr float LINE_RATIO = 1.35f;   ///< line height = size × ratio
 
     explicit PdfLayout(minipdf::Document& doc) : doc_(doc) {
-        body_font_ = doc.body_font().get();  // non-owning; Document owns the shared_ptr
         content_w_ = doc.page_width() - MARGIN_LEFT - MARGIN_RIGHT;
         new_page();
     }
@@ -603,13 +628,14 @@ public:
 
 private:
     /// Measure the rendered width of @p text in the given style/size, using
-    /// the custom body font for Regular text when one is attached.
+    /// the custom font for that style when one is attached.
     [[nodiscard]] float tw(const std::string& text,
                            minipdf::FontStyle style, float size) const {
-        if (body_font_ && style == minipdf::FontStyle::Regular) {
+        const auto& ttf = doc_.get_font(style);
+        if (ttf) {
             float w = 0.0f;
             for (char c : text) {
-                w += body_font_->advance_1000(static_cast<unsigned char>(c));
+                w += ttf->advance_1000(static_cast<unsigned char>(c));
             }
             return w * size / 1000.0f;
         }
@@ -620,7 +646,6 @@ private:
     minipdf::Page*          page_      = nullptr;
     float                   cursor_y_  = 0.0f;
     float                   content_w_ = 0.0f;
-    const minipdf::TtfFont* body_font_ = nullptr;  ///< non-owning; may be nullptr
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -629,13 +654,31 @@ private:
 
 class PdfConverter {
 public:
-    explicit PdfConverter(bool a4 = false, const std::string& font_path = "")
-        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter),
-          body_font_(minipdf::TtfFont::from_file(font_path)) {}
+    explicit PdfConverter(bool a4 = false, const FontSet& fonts = {})
+        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter) {
+        using FS = minipdf::FontStyle;
+        auto load = [](const std::string& path) {
+            return minipdf::TtfFont::from_file(path);
+        };
+        fonts_[static_cast<std::size_t>(FS::Regular)]     = load(fonts.regular);
+        fonts_[static_cast<std::size_t>(FS::Bold)]        = load(fonts.bold);
+        fonts_[static_cast<std::size_t>(FS::Oblique)]     = load(fonts.italic);
+        fonts_[static_cast<std::size_t>(FS::BoldOblique)] = load(fonts.bold_italic);
+        fonts_[static_cast<std::size_t>(FS::Mono)]        = load(fonts.mono);
+        fonts_[static_cast<std::size_t>(FS::MonoBold)]    = load(fonts.mono_bold);
+    }
 
     [[nodiscard]] std::string convert(const Document& doc) const {
         minipdf::Document pdf(page_size_);
-        if (body_font_) { pdf.set_body_font(body_font_); }
+        using FS = minipdf::FontStyle;
+        static constexpr FS styles[] = {
+            FS::Regular, FS::Bold, FS::Oblique,
+            FS::BoldOblique, FS::Mono, FS::MonoBold
+        };
+        for (auto s : styles) {
+            const auto& f = fonts_[static_cast<std::size_t>(s)];
+            if (f) { pdf.set_font(s, f); }
+        }
         PdfLayout layout(pdf);
 
         render_document(doc, layout);
@@ -644,8 +687,8 @@ public:
     }
 
 private:
-    minipdf::PageSize               page_size_;
-    std::shared_ptr<minipdf::TtfFont> body_font_;
+    minipdf::PageSize                              page_size_;
+    std::array<std::shared_ptr<minipdf::TtfFont>, 6> fonts_{};
 
     // ── Apply attribute substitution (document header and simple paragraphs)
     [[nodiscard]] static std::string attrs(const std::string& text,
@@ -895,18 +938,30 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Free function convenience wrapper
+// Free function convenience wrappers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Convert a parsed Document to a PDF byte string using a FontSet.
+/// @param a4    When true, use A4 page size; otherwise Letter (default).
+/// @param fonts Paths to TrueType font files for each text style.  Any empty
+///              path falls back to the corresponding PDF base-14 font.
+[[nodiscard]] inline std::string convert_to_pdf(const Document& doc,
+                                                 bool a4,
+                                                 const FontSet& fonts) {
+    return PdfConverter{a4, fonts}.convert(doc);
+}
 
 /// Convert a parsed Document to a PDF byte string.
 /// @param a4        When true, use A4 page size; otherwise Letter (default).
 /// @param font_path Optional path to a TrueType (.ttf) file to use as the
-///                  body text font.  When empty (default) or unreadable,
-///                  the PDF base-14 font Helvetica is used instead.
+///                  body text font (FontStyle::Regular / F1).  When empty
+///                  (default) or unreadable, Helvetica is used instead.
 [[nodiscard]] inline std::string convert_to_pdf(const Document& doc,
                                                  bool a4 = false,
                                                  const std::string& font_path = "") {
-    return PdfConverter{a4, font_path}.convert(doc);
+    FontSet fs;
+    fs.regular = font_path;
+    return PdfConverter{a4, fs}.convert(doc);
 }
 
 } // namespace asciiquack
