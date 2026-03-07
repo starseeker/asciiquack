@@ -180,7 +180,10 @@ static int convert_one(const std::string&    source_path,
         }
 #endif
 
-        output = asciiquack::convert_to_pdf(*doc, a4, fonts);
+        output = asciiquack::convert_to_pdf(*doc, a4, fonts,
+            source_path != "<stdin>"
+                ? fs::path{source_path}.parent_path().string()
+                : "");
     } else if (params.backend == "docbook5" || params.backend == "docbook") {
         output = asciiquack::convert_to_docbook5(*doc);
     } else {

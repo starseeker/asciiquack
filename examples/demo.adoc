@@ -136,8 +136,9 @@ Content continues after the rule above.
 
 == Images
 
-When an image target is present in the source the PDF output shows a
-placeholder (full image rendering is not yet implemented):
+Images are embedded directly in the PDF output.
+JPEG images are stored with the native DCTDecode filter for compact output;
+PNG images are decoded and stored as uncompressed RGB pixel data.
 
 image::asciiquack.png[asciiquack,width=400]
 

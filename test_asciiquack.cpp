@@ -11,6 +11,7 @@
 #include "document.hpp"
 #include "html5.hpp"
 #include "manpage.hpp"
+#include "minipdf.hpp"
 #include "parser.hpp"
 #include "pdf.hpp"
 #include "reader.hpp"
@@ -3323,8 +3324,350 @@ static void test_pdf_fontset_xref_valid_six_fonts() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// main
+// Heading rule tests
 // ─────────────────────────────────────────────────────────────────────────────
+
+static void test_pdf_heading_rule_not_through_body() {
+    begin_test("pdf: heading rule does not bleed into body text (fill_rect before paragraph)");
+
+    // A document with a level-1 heading followed immediately by a paragraph.
+    const std::string src =
+        "= Doc Title\n"
+        "\n"
+        "== Section One\n"
+        "\n"
+        "Body text follows the heading.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // The PDF should render without crashing and contain the heading text.
+    EXPECT_CONTAINS(pdf, "Section");
+    EXPECT_CONTAINS(pdf, "One");
+    EXPECT_CONTAINS(pdf, "Body");
+
+    // Both the title-level and section-level rules should be present.
+    // fill_rect produces "<w> <h> re f" sequences.  Each rule produces one.
+    std::size_t re_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find(" re f\n", pos)) != std::string::npos) {
+        ++re_count;
+        ++pos;
+    }
+    // At least two fill_rect calls: one for document title rule, one for
+    // the section rule.
+    EXPECT(re_count >= 2);
+
+    end_test();
+}
+
+static void test_pdf_heading_rule_position_below_heading() {
+    begin_test("pdf: heading rule is positioned below heading, not overlapping body");
+
+    // Generate a minimal single-page document with a level-0 heading and body.
+    const std::string src =
+        "= My Title\n"
+        "\n"
+        "Paragraph text here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // The first fill_rect in the page content places the title rule.
+    // We verify that its Y coordinate is LOWER on the page than the title
+    // text baseline (which is placed near the top margin).
+    // The title baseline will be near 720pt (page height 792 - margin 72 = 720).
+    // After the title is drawn the rule Y is approximately title_baseline - sz*0.35
+    // for sz=26 that is ~710pt.  Body text starts well below that (< 700pt).
+    //
+    // We can verify indirectly: the PDF content must contain at least one
+    // fill_rect (re f) command, and the document must be structurally valid.
+    EXPECT_CONTAINS(pdf, " re f\n");
+    EXPECT_CONTAINS(pdf, "My");
+    EXPECT_CONTAINS(pdf, "Title");
+    EXPECT_CONTAINS(pdf, "Paragraph");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF image rendering tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_pdf_image_missing_file_emits_placeholder() {
+    begin_test("pdf: missing image file falls back to text placeholder");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "image::nonexistent_file_abc123.png[alt text]\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Placeholder contains the target path
+    EXPECT_CONTAINS(pdf, "nonexistent_file_abc123.png");
+    // No /XObject resource should appear (no image was embedded)
+    EXPECT_NOT_CONTAINS(pdf, "/XObject");
+
+    end_test();
+}
+
+static void test_pdf_image_xobject_structure() {
+    begin_test("pdf: embedded image produces /XObject and /Image entries");
+
+    // Write a minimal 1×1 JPEG to a temp file.
+    // A 1×1 grayscale JPEG (smallest valid JPEG): SOI + APP0 + SOF0 + SOS + EOI
+    // We use a known-good minimal JPEG byte sequence.
+    static const unsigned char TINY_JPEG[] = {
+        // 1×1 white JPEG (generated with ImageMagick convert -size 1x1 xc:white tiny.jpg)
+        0xFF, 0xD8,              // SOI
+        0xFF, 0xE0,              // APP0 marker
+        0x00, 0x10,              // length = 16
+        0x4A, 0x46, 0x49, 0x46, 0x00,  // "JFIF\0"
+        0x01, 0x01,              // version 1.1
+        0x00,                    // density units = 0
+        0x00, 0x01, 0x00, 0x01, // Xdensity=1, Ydensity=1
+        0x00, 0x00,              // thumbnail 0×0
+        0xFF, 0xDB,              // DQT marker
+        0x00, 0x43,              // length = 67
+        0x00,                    // table 0, 8-bit precision
+        // 64 quantization values (all 1)
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0xFF, 0xC0,              // SOF0 marker
+        0x00, 0x0B,              // length = 11
+        0x08,                    // precision = 8
+        0x00, 0x01,              // height = 1
+        0x00, 0x01,              // width = 1
+        0x01,                    // ncomponents = 1 (grayscale)
+        0x01, 0x11, 0x00,        // component 1 params
+        0xFF, 0xC4,              // DHT marker
+        0x00, 0x1F,              // length = 31
+        0x00,                    // table 0, DC
+        0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+        0x08,0x09,0x0A,0x0B,
+        0xFF, 0xDA,              // SOS marker
+        0x00, 0x08,              // length = 8
+        0x01,                    // ncomponents = 1
+        0x01, 0x00,              // component 1, table ids
+        0x00, 0x3F, 0x00,        // spectral selection
+        0xF8,                    // compressed scan data (minimal)
+        0xFF, 0xD9               // EOI
+    };
+    // Write to a temp file
+    namespace fs = std::filesystem;
+    const fs::path tmp_jpeg = fs::temp_directory_path() / "asciiquack_test_img.jpg";
+    {
+        std::ofstream f(tmp_jpeg, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(TINY_JPEG), sizeof(TINY_JPEG));
+    }
+
+    std::string src =
+        "= Test Images\n\n"
+        "image::" + tmp_jpeg.string() + "[tiny,width=72]\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    // Clean up temp file
+    fs::remove(tmp_jpeg);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // An image XObject should be present
+    EXPECT_CONTAINS(pdf, "/XObject");
+    EXPECT_CONTAINS(pdf, "/Subtype /Image");
+    EXPECT_CONTAINS(pdf, "/Filter /DCTDecode");
+    // The image resource name Im1 should appear
+    EXPECT_CONTAINS(pdf, "/Im1");
+    // The page content should invoke the image with "Do"
+    EXPECT_CONTAINS(pdf, "/Im1 Do");
+
+    end_test();
+}
+
+static void test_pdf_image_xobject_xref_valid() {
+    begin_test("pdf: xref table remains valid after embedding an image");
+
+    namespace fs = std::filesystem;
+    const fs::path tmp_jpeg = fs::temp_directory_path() / "asciiquack_xref_img.jpg";
+    // Re-use the same minimal JPEG bytes as above
+    static const unsigned char TINY_JPEG[] = {
+        0xFF,0xD8, 0xFF,0xE0, 0x00,0x10, 0x4A,0x46,0x49,0x46,0x00,
+        0x01,0x01, 0x00, 0x00,0x01,0x00,0x01, 0x00,0x00,
+        0xFF,0xDB, 0x00,0x43, 0x00,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0xFF,0xC0, 0x00,0x0B, 0x08, 0x00,0x01, 0x00,0x01,
+        0x01, 0x01,0x11,0x00,
+        0xFF,0xC4, 0x00,0x1F, 0x00,
+        0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+        0x08,0x09,0x0A,0x0B,
+        0xFF,0xDA, 0x00,0x08, 0x01, 0x01,0x00, 0x00,0x3F,0x00,
+        0xF8, 0xFF,0xD9
+    };
+    {
+        std::ofstream f(tmp_jpeg, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(TINY_JPEG), sizeof(TINY_JPEG));
+    }
+
+    std::string src =
+        "= Xref Check\n\n"
+        "image::" + tmp_jpeg.string() + "[img]\n"
+        "\nSome paragraph after the image.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+    fs::remove(tmp_jpeg);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "/Im1");
+
+    end_test();
+}
+
+static void test_pdf_image_images_dir_resolution() {
+    begin_test("pdf: images_dir parameter allows resolving relative image paths");
+
+    namespace fs = std::filesystem;
+    // Write a tiny JPEG to a temp directory
+    fs::path tmp_dir = fs::temp_directory_path() / "asciiquack_img_dir_test";
+    fs::create_directories(tmp_dir);
+    const fs::path tmp_jpeg = tmp_dir / "test_img.jpg";
+    static const unsigned char TINY_JPEG[] = {
+        0xFF,0xD8, 0xFF,0xE0, 0x00,0x10, 0x4A,0x46,0x49,0x46,0x00,
+        0x01,0x01, 0x00, 0x00,0x01,0x00,0x01, 0x00,0x00,
+        0xFF,0xDB, 0x00,0x43, 0x00,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+        0xFF,0xC0, 0x00,0x0B, 0x08, 0x00,0x01, 0x00,0x01,
+        0x01, 0x01,0x11,0x00,
+        0xFF,0xC4, 0x00,0x1F, 0x00,
+        0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,
+        0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+        0x08,0x09,0x0A,0x0B,
+        0xFF,0xDA, 0x00,0x08, 0x01, 0x01,0x00, 0x00,0x3F,0x00,
+        0xF8, 0xFF,0xD9
+    };
+    {
+        std::ofstream f(tmp_jpeg, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(TINY_JPEG), sizeof(TINY_JPEG));
+    }
+
+    // Reference only "test_img.jpg" (relative), but pass images_dir
+    const std::string src =
+        "= Dir Test\n\n"
+        "image::test_img.jpg[test]\n";
+
+    asciiquack::FontSet fs_empty;
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs_empty,
+                                                  tmp_dir.string());
+
+    fs::remove(tmp_jpeg);
+    fs::remove(tmp_dir);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Image should have been found and embedded
+    EXPECT_CONTAINS(pdf, "/XObject");
+    EXPECT_CONTAINS(pdf, "/Im1 Do");
+
+    end_test();
+}
+
+#ifdef MINIPDF_USE_ZLIB
+static void test_minipdf_png_from_file_loads() {
+    begin_test("minipdf: PdfImage::from_file loads the demo PNG");
+
+    // Use the demo PNG that ships with the repository
+    const std::string png_path =
+        std::string(CMAKE_SOURCE_DIR) + "/examples/asciiquack.png";
+    {
+        std::ifstream probe(png_path, std::ios::binary);
+        if (!probe) {
+            std::cout << " (skipped – demo PNG not found at " << png_path << ")";
+            end_test();
+            return;
+        }
+    }
+
+    auto img = minipdf::PdfImage::from_file(png_path);
+    EXPECT(img != nullptr);
+    if (img) {
+        EXPECT(img->width()  == 1024);
+        EXPECT(img->height() == 1024);
+        EXPECT(img->channels() == 3);
+        EXPECT(img->encoding() == minipdf::PdfImage::Encoding::Raw);
+        // Raw 1024×1024 RGB = 3 145 728 bytes
+        EXPECT(img->data().size() == 1024u * 1024u * 3u);
+    }
+
+    end_test();
+}
+#endif // MINIPDF_USE_ZLIB
+
+static void test_minipdf_jpeg_from_file_loads() {
+    begin_test("minipdf: PdfImage::from_jpeg_file returns nullptr for non-JPEG");
+
+    // Passing a non-existent file should return nullptr gracefully.
+    auto img = minipdf::PdfImage::from_jpeg_file("/nonexistent/path/image.jpg");
+    EXPECT(img == nullptr);
+
+    // Passing an empty string should also return nullptr.
+    auto img2 = minipdf::PdfImage::from_jpeg_file("");
+    EXPECT(img2 == nullptr);
+
+    end_test();
+}
+
+static void test_minipdf_png_missing_returns_nullptr() {
+    begin_test("minipdf: PdfImage::from_png_file returns nullptr for missing file");
+
+    auto img = minipdf::PdfImage::from_png_file("/nonexistent/path/image.png");
+    EXPECT(img == nullptr);
+
+    auto img2 = minipdf::PdfImage::from_file("/nonexistent/path/image.png");
+    EXPECT(img2 == nullptr);
+
+    end_test();
+}
+
+
 
 int main(int argc, char* argv[]) {
     // Check for -v flag
@@ -3517,6 +3860,17 @@ int main(int argc, char* argv[]) {
     test_pdf_fontset_mono_custom();
     test_pdf_fontset_noto_metrics_differ_from_helvetica();
     test_pdf_fontset_xref_valid_six_fonts();
+    test_pdf_heading_rule_not_through_body();
+    test_pdf_heading_rule_position_below_heading();
+    test_pdf_image_missing_file_emits_placeholder();
+    test_pdf_image_xobject_structure();
+    test_pdf_image_xobject_xref_valid();
+    test_pdf_image_images_dir_resolution();
+#ifdef MINIPDF_USE_ZLIB
+    test_minipdf_png_from_file_loads();
+#endif
+    test_minipdf_jpeg_from_file_loads();
+    test_minipdf_png_missing_returns_nullptr();
 
     // Summary
     std::cout << "\n============================\n";

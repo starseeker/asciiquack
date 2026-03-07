@@ -392,23 +392,23 @@ public:
         static const float SIZES[] = {26.0f, 22.0f, 18.0f, 15.0f, 13.0f, 12.0f};
         float sz = SIZES[std::min(level, 5)];
         float lh = sz * LINE_RATIO;
+        float bar_h = (level == 0) ? 3.0f : (level == 1) ? 1.5f : 0.0f;
 
         // Extra space before heading (except at very top of first page)
         float space_before = (cursor_y_ < doc_.page_height() - MARGIN_TOP - 2.0f)
                              ? sz * 1.2f : 0.0f;
-        ensure_space(space_before + lh + 2.0f);
-        cursor_y_ -= space_before;
 
-        // Draw a coloured rule under top-level headings
-        if (level <= 1) {
-            float bar_h = (level == 0) ? 3.0f : 1.5f;
-            float bar_y = cursor_y_ - lh - 2.0f;
-            // Light grey for level 0, lighter for level 1
-            float c = (level == 0) ? 0.3f : 0.6f;
-            page_->fill_rect(MARGIN_LEFT, bar_y,
-                             content_w_, bar_h,
-                             c, c, c);
-        }
+        // For ruled headings the space consumed is:
+        //   space_before + lh (one heading line) + bar_offset + bar_h + gap_below
+        // gap_below must be large enough that body-text ascenders (≈ BODY_SIZE)
+        // do not reach up into the bar.  A gap of BODY_SIZE * 1.5 is sufficient.
+        const float gap_below = (level <= 1) ? BODY_SIZE * 1.5f : 2.0f;
+        // bar_offset = distance from last heading line baseline to bar bottom
+        // ≈ sz * 0.35 (just past heading descenders)
+        const float bar_offset = sz * 0.35f;
+        ensure_space(space_before + lh +
+                     (bar_h > 0.0f ? bar_offset + bar_h + gap_below : gap_below));
+        cursor_y_ -= space_before;
 
         auto spans = parse_spans(title, minipdf::FontStyle::Bold);
         // Force heading size onto all spans
@@ -416,8 +416,20 @@ public:
         spans = merge_spans(std::move(spans));
         wrap_spans(spans, lh, 0.0f);
 
-        // Small gap after heading rule
-        cursor_y_ -= (level <= 1) ? 4.0f : 2.0f;
+        // Draw a coloured rule after the heading text.  The bar is placed just
+        // below the last heading line's descenders, so it acts as a visual
+        // separator between the heading block and the following body text.
+        if (level <= 1) {
+            // cursor_y_ is now at last_line_baseline - lh; recover last baseline
+            float last_baseline = cursor_y_ + lh;
+            float bar_bottom = last_baseline - bar_offset;
+            float c = (level == 0) ? 0.3f : 0.6f;
+            page_->fill_rect(MARGIN_LEFT, bar_bottom, content_w_, bar_h, c, c, c);
+            // Advance cursor to below the bar with enough room for body text
+            cursor_y_ = bar_bottom - bar_h - gap_below;
+        } else {
+            cursor_y_ -= gap_below;
+        }
     }
 
     // ── Paragraph ─────────────────────────────────────────────────────────────
@@ -478,6 +490,52 @@ public:
                           MARGIN_LEFT + content_w_, 0.5f,
                           0.5f, 0.5f, 0.5f);
         cursor_y_ -= 4.0f;
+    }
+
+    // ── Image block ───────────────────────────────────────────────────────────
+
+    /// Embed a raster image (JPEG or PNG) at the current cursor position.
+    ///
+    /// The image is scaled to fit within the content area while preserving its
+    /// aspect ratio.  When @p hint_w is non-zero it is used as the requested
+    /// display width in points; otherwise the image fills the content width.
+    /// @p hint_h is an optional height override (0 = maintain aspect ratio).
+    ///
+    /// When the image cannot be loaded (missing file, unsupported format) a
+    /// plain-text placeholder is emitted instead.
+    void image_block(const std::string& path,
+                     float hint_w = 0.0f, float hint_h = 0.0f) {
+        auto img = minipdf::PdfImage::from_file(path);
+        if (!img) {
+            // Fall back to a text placeholder
+            paragraph("[image: " + path + "]");
+            return;
+        }
+
+        // Determine display dimensions
+        float img_w = (img->width()  > 0) ? static_cast<float>(img->width())  : 1.0f;
+        float img_h = (img->height() > 0) ? static_cast<float>(img->height()) : 1.0f;
+        float aspect = img_h / img_w;
+
+        float disp_w = (hint_w > 0.0f) ? hint_w : content_w_;
+        disp_w = std::min(disp_w, content_w_);  // never overflow margin
+
+        float disp_h = (hint_h > 0.0f) ? hint_h : disp_w * aspect;
+
+        ensure_space(disp_h + BODY_SIZE);  // +1 line for spacing
+        if (disp_h > (cursor_y_ - MARGIN_BOTTOM)) {
+            // Still too tall after a possible page break; clamp to page
+            disp_h = cursor_y_ - MARGIN_BOTTOM - BODY_SIZE;
+            if (disp_h <= 0.0f) { disp_h = BODY_SIZE; }
+            disp_w = disp_h / aspect;
+        }
+
+        // Add image to document and place it
+        std::string res = doc_.add_image(img);
+        // PDF y is from the bottom; cursor_y_ is the TOP-LEFT origin in our model
+        float img_y = cursor_y_ - disp_h;
+        page_->place_image(MARGIN_LEFT, img_y, disp_w, disp_h, res);
+        cursor_y_ = img_y - BODY_SIZE * 0.5f;  // small gap below image
     }
 
     // ── Page break ────────────────────────────────────────────────────────────
@@ -654,8 +712,10 @@ private:
 
 class PdfConverter {
 public:
-    explicit PdfConverter(bool a4 = false, const FontSet& fonts = {})
-        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter) {
+    explicit PdfConverter(bool a4 = false, const FontSet& fonts = {},
+                          const std::string& images_dir = "")
+        : page_size_(a4 ? minipdf::PageSize::A4 : minipdf::PageSize::Letter),
+          images_dir_(images_dir) {
         using FS = minipdf::FontStyle;
         auto load = [](const std::string& path) {
             return minipdf::TtfFont::from_file(path);
@@ -689,6 +749,7 @@ public:
 private:
     minipdf::PageSize                              page_size_;
     std::array<std::shared_ptr<minipdf::TtfFont>, 6> fonts_{};
+    std::string                                    images_dir_;
 
     // ── Apply attribute substitution (document header and simple paragraphs)
     [[nodiscard]] static std::string attrs(const std::string& text,
@@ -799,10 +860,53 @@ private:
                 layout.page_break();
                 break;
 
-            case BlockContext::Image:
-                // Images not yet supported; emit a placeholder
-                layout.paragraph("[image: " + blk.attr("target") + "]");
+            case BlockContext::Image: {
+                // Resolve the image target to a file path.
+                // Try, in order:
+                //   1. target as-is (absolute or relative to cwd)
+                //   2. images_dir_ / target
+                //   3. imagesdir document attribute + "/" + target
+                std::string target = blk.attr("target");
+                std::string resolved;
+                {
+                    auto try_path = [](const std::string& p) -> bool {
+                        if (p.empty()) { return false; }
+                        std::ifstream tf(p, std::ios::binary);
+                        return static_cast<bool>(tf);
+                    };
+                    if (try_path(target)) {
+                        resolved = target;
+                    } else if (!images_dir_.empty()) {
+                        std::string candidate = images_dir_ + "/" + target;
+                        if (try_path(candidate)) { resolved = candidate; }
+                    }
+                    if (resolved.empty()) {
+                        // Try document imagesdir attribute
+                        std::string idir = doc.attr("imagesdir");
+                        if (!idir.empty()) {
+                            std::string candidate = idir + "/" + target;
+                            if (try_path(candidate)) { resolved = candidate; }
+                        }
+                    }
+                    if (resolved.empty()) { resolved = target; }
+                }
+
+                // Parse optional width/height hints from block attributes
+                float hint_w = 0.0f, hint_h = 0.0f;
+                {
+                    const std::string& ws = blk.attr("width");
+                    const std::string& hs = blk.attr("height");
+                    if (!ws.empty()) {
+                        try { hint_w = std::stof(ws); } catch (...) {}
+                    }
+                    if (!hs.empty()) {
+                        try { hint_h = std::stof(hs); } catch (...) {}
+                    }
+                }
+
+                layout.image_block(resolved, hint_w, hint_h);
                 break;
+            }
 
             case BlockContext::Preamble:
             default:
@@ -942,13 +1046,17 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Convert a parsed Document to a PDF byte string using a FontSet.
-/// @param a4    When true, use A4 page size; otherwise Letter (default).
-/// @param fonts Paths to TrueType font files for each text style.  Any empty
-///              path falls back to the corresponding PDF base-14 font.
+/// @param a4         When true, use A4 page size; otherwise Letter (default).
+/// @param fonts      Paths to TrueType font files for each text style.  Any empty
+///                   path falls back to the corresponding PDF base-14 font.
+/// @param images_dir Base directory to search for image files referenced by
+///                   image:: blocks.  When empty, only the target path as written
+///                   in the source and the document's imagesdir attribute are tried.
 [[nodiscard]] inline std::string convert_to_pdf(const Document& doc,
                                                  bool a4,
-                                                 const FontSet& fonts) {
-    return PdfConverter{a4, fonts}.convert(doc);
+                                                 const FontSet& fonts,
+                                                 const std::string& images_dir = "") {
+    return PdfConverter{a4, fonts, images_dir}.convert(doc);
 }
 
 /// Convert a parsed Document to a PDF byte string.
