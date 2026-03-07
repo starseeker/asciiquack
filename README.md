@@ -42,10 +42,11 @@ cmake --build .
 | `-DUSE_SYSTEM_PCRE2=OFF` | Embedded PCRE2 vendor subset | No external dependency |
 | `-DUSE_PCRE2=OFF` | `std::regex` | Slowest; always available |
 
-The embedded PCRE2 subset (`vendor/pcre2/`) is a minimal copy of PCRE2 10.42
-compiled into the project: 22 source files (~30 000 lines), no JIT compiler,
-no Unicode property support (`\p{}`), no DFA engine.  Install `libpcre2-dev`
-to get the full JIT-enabled system library.
+The embedded PCRE2 subset (`vendor/pcre2_embed.h`) is a single-header
+amalgamation of PCRE2 10.42 (~54 000 lines): no JIT compiler, no Unicode
+property support (`\p{}`), no DFA engine.  Include `vendor/pcre2_impl.c` in
+your build to instantiate it.  Install `libpcre2-dev` to get the full
+JIT-enabled system library.
 
 ## Performance
 

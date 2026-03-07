@@ -44,7 +44,7 @@
 #ifdef AQREGEX_PCRE2_SYSTEM
 #  include <pcre2.h>   // system-installed header
 #else
-#  include "vendor/pcre2/pcre2.h"   // embedded vendor header
+#  include "vendor/pcre2_embed.h"   // embedded single-header amalgamation
 #endif
 
 #include <cstddef>

@@ -84,39 +84,13 @@ if(USE_PCRE2)
         list(APPEND AQREGEX_INCS ${PCRE2_INCLUDE_DIRS})
         message(STATUS "  Regex backend: system PCRE2 ${PCRE2_VERSION} (JIT enabled, ~5× vs std::regex)")
     else()
-        # ── Embedded PCRE2 vendor subset: no JIT, no external dependency ─────
-        # Compile the 18 minimal PCRE2 .c files as part of each target.
-        set(PCRE2_EMBED_SRCS
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_auto_possess.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_chartables.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_compile.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_context.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_error.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_find_bracket.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_jit_compile.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_maketables.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_match.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_match_data.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_newline.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_ord2utf.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_pattern_info.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_string_utils.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_study.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_substitute.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_tables.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_valid_utf.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_xclass.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_script_run.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_substring.c"
-            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_ucd.c"
-        )
-        list(APPEND AQREGEX_DEFS
-            AQREGEX_USE_PCRE2
-            PCRE2_STATIC
-            HAVE_CONFIG_H
-        )
-        list(APPEND AQREGEX_SRCS ${PCRE2_EMBED_SRCS})
-        list(APPEND AQREGEX_INCS "${CMAKE_SOURCE_DIR}/vendor/pcre2")
+        # ── Embedded PCRE2 amalgamation: no JIT, no external dependency ───────
+        # A single translation unit instantiates all of the PCRE2 implementation.
+        # The header vendor/pcre2_embed.h provides the public API to every TU;
+        # vendor/pcre2_impl.c defines PCRE2_EMBED_IMPLEMENTATION and includes it.
+        list(APPEND AQREGEX_DEFS AQREGEX_USE_PCRE2)
+        list(APPEND AQREGEX_SRCS "${CMAKE_SOURCE_DIR}/vendor/pcre2_impl.c")
+        list(APPEND AQREGEX_INCS "${CMAKE_SOURCE_DIR}/vendor")
         if(USE_SYSTEM_PCRE2)
             message(STATUS "  Regex backend: embedded PCRE2 10.42 (system library not found; no JIT, ~3× vs std::regex)")
         else()
@@ -140,11 +114,11 @@ function(aqregex_configure target)
     endif()
     if(AQREGEX_SRCS)
         target_sources(${target} PRIVATE ${AQREGEX_SRCS})
-        # Suppress warnings from vendored C code; it's not our code.
+        # Suppress warnings from vendored C code; the amalgamation header
+        # handles PCRE2_CODE_UNIT_WIDTH and PCRE2_STATIC internally.
         set_source_files_properties(${AQREGEX_SRCS}
             TARGET_DIRECTORY ${target}
-            PROPERTIES COMPILE_FLAGS
-                "-w -DPCRE2_CODE_UNIT_WIDTH=8")
+            PROPERTIES COMPILE_FLAGS "-w")
     endif()
 endfunction()
 
