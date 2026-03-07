@@ -2043,6 +2043,278 @@ static void test_table_col_style_h() {
     end_test();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DocBook 5 backend tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#include "docbook5.hpp"
+
+static void test_docbook5_basic_document() {
+    begin_test("docbook5: basic document structure");
+
+    const std::string src =
+        "= My Article\n"
+        "Jane Doe <jane@example.com>\n"
+        "v1.0, 2024-01-01\n"
+        "\n"
+        "Introduction paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+    EXPECT_CONTAINS(out, "xmlns=\"http://docbook.org/ns/docbook\"");
+    EXPECT_CONTAINS(out, "version=\"5.0\"");
+    EXPECT_CONTAINS(out, "<article");
+    EXPECT_CONTAINS(out, "</article>");
+    EXPECT_CONTAINS(out, "<info>");
+    EXPECT_CONTAINS(out, "<title>My Article</title>");
+    EXPECT_CONTAINS(out, "<author>");
+    EXPECT_CONTAINS(out, "Jane");
+    EXPECT_CONTAINS(out, "2024-01-01");
+    EXPECT_CONTAINS(out, "<para>Introduction paragraph.</para>");
+
+    end_test();
+}
+
+static void test_docbook5_sections() {
+    begin_test("docbook5: sections become <section> elements with titles");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "== First Section\n"
+        "\n"
+        "Body text.\n"
+        "\n"
+        "=== Subsection\n"
+        "\n"
+        "Sub content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<section");
+    EXPECT_CONTAINS(out, "<title>First Section</title>");
+    EXPECT_CONTAINS(out, "<title>Subsection</title>");
+    EXPECT_CONTAINS(out, "<para>Body text.</para>");
+
+    end_test();
+}
+
+static void test_docbook5_listing_block() {
+    begin_test("docbook5: listing block becomes <programlisting>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[source,python]\n"
+        "----\n"
+        "print(\"hello\")\n"
+        "----\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<programlisting language=\"python\">");
+    EXPECT_CONTAINS(out, "print(");
+    EXPECT_CONTAINS(out, "</programlisting>");
+
+    end_test();
+}
+
+static void test_docbook5_admonition() {
+    begin_test("docbook5: admonition paragraph becomes DocBook element");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "NOTE: This is important.\n"
+        "\n"
+        "WARNING: Be careful.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<note>");
+    EXPECT_CONTAINS(out, "</note>");
+    EXPECT_CONTAINS(out, "<warning>");
+    EXPECT_CONTAINS(out, "</warning>");
+    EXPECT_CONTAINS(out, "This is important.");
+
+    end_test();
+}
+
+static void test_docbook5_ulist() {
+    begin_test("docbook5: unordered list becomes <itemizedlist>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "* Apple\n"
+        "* Banana\n"
+        "* Cherry\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<itemizedlist>");
+    EXPECT_CONTAINS(out, "<listitem>");
+    EXPECT_CONTAINS(out, "Apple");
+    EXPECT_CONTAINS(out, "Banana");
+    EXPECT_CONTAINS(out, "</itemizedlist>");
+
+    end_test();
+}
+
+static void test_docbook5_olist() {
+    begin_test("docbook5: ordered list becomes <orderedlist>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        ". Step one\n"
+        ". Step two\n"
+        ". Step three\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<orderedlist");
+    EXPECT_CONTAINS(out, "numeration=\"arabic\"");
+    EXPECT_CONTAINS(out, "<listitem>");
+    EXPECT_CONTAINS(out, "Step one");
+    EXPECT_CONTAINS(out, "</orderedlist>");
+
+    end_test();
+}
+
+static void test_docbook5_dlist() {
+    begin_test("docbook5: description list becomes <variablelist>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "term one:: description one\n"
+        "term two:: description two\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<variablelist>");
+    EXPECT_CONTAINS(out, "<varlistentry>");
+    EXPECT_CONTAINS(out, "<term>");
+    EXPECT_CONTAINS(out, "term one");
+    EXPECT_CONTAINS(out, "description one");
+    EXPECT_CONTAINS(out, "</variablelist>");
+
+    end_test();
+}
+
+static void test_docbook5_inline_markup() {
+    begin_test("docbook5: inline bold and italic become <emphasis>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Use *bold* and _italic_ and `mono` text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<emphasis role=\"strong\">");
+    EXPECT_CONTAINS(out, "<emphasis>");
+    EXPECT_CONTAINS(out, "<literal>");
+    EXPECT_CONTAINS(out, "bold");
+    EXPECT_CONTAINS(out, "italic");
+    EXPECT_CONTAINS(out, "mono");
+
+    end_test();
+}
+
+static void test_docbook5_special_chars() {
+    begin_test("docbook5: special characters are XML-escaped");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Use <angle> brackets & \"quotes\".\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "&lt;angle&gt;");
+    EXPECT_CONTAINS(out, "&amp;");
+    EXPECT_NOT_CONTAINS(out, "<angle>");
+
+    end_test();
+}
+
+static void test_docbook5_book_doctype() {
+    begin_test("docbook5: book doctype produces <book> root and <chapter>");
+
+    const std::string src =
+        "= My Book\n"
+        ":doctype: book\n"
+        "\n"
+        "== Chapter One\n"
+        "\n"
+        "Content.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "book";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<book");
+    EXPECT_CONTAINS(out, "</book>");
+    EXPECT_CONTAINS(out, "<chapter");
+    EXPECT_CONTAINS(out, "<title>Chapter One</title>");
+
+    end_test();
+}
+
+static void test_docbook5_table() {
+    begin_test("docbook5: table becomes CALS <informaltable>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "|===\n"
+        "| A | B\n"
+        "| 1 | 2\n"
+        "|===\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<informaltable");
+    EXPECT_CONTAINS(out, "<tgroup");
+    EXPECT_CONTAINS(out, "<tbody>");
+    EXPECT_CONTAINS(out, "<row>");
+    EXPECT_CONTAINS(out, "<entry>");
+
+    end_test();
+}
+
+static void test_docbook5_image() {
+    begin_test("docbook5: block image becomes <mediaobject>");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "image::sunset.png[Beautiful sunset]\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    const std::string out = asciiquack::convert_to_docbook5(*doc);
+
+    EXPECT_CONTAINS(out, "<mediaobject>");
+    EXPECT_CONTAINS(out, "<imagedata fileref=\"sunset.png\"");
+    EXPECT_CONTAINS(out, "Beautiful sunset");
+
+    end_test();
+}
+
 static void test_section_nesting_warning() {
     begin_test("parser: section nesting skip emits warning to stderr");
 
@@ -2217,6 +2489,21 @@ int main(int argc, char* argv[]) {
     test_table_col_repeat();
     test_table_col_style_h();
     test_section_nesting_warning();
+
+    // DocBook 5 backend tests
+    std::cout << "\nDocBook 5 backend tests:\n";
+    test_docbook5_basic_document();
+    test_docbook5_sections();
+    test_docbook5_listing_block();
+    test_docbook5_admonition();
+    test_docbook5_ulist();
+    test_docbook5_olist();
+    test_docbook5_dlist();
+    test_docbook5_inline_markup();
+    test_docbook5_special_chars();
+    test_docbook5_book_doctype();
+    test_docbook5_table();
+    test_docbook5_image();
 
     // Summary
     std::cout << "\n============================\n";
