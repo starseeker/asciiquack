@@ -15,6 +15,10 @@
 #include "substitutors.hpp"
 
 #include <cassert>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -840,6 +844,1053 @@ static void test_integration_basic() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// P1 feature tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_multiline_attribute_value() {
+    begin_test("parser: multi-line attribute value (trailing \\)");
+
+    const std::string src =
+        ":long-val: first part \\\n"
+        "second part\n"
+        "\n"
+        "{long-val}\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    EXPECT_EQ(doc->attr("long-val"), "first part second part");
+
+    // Verify it's expanded in paragraph
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "first part second part");
+
+    end_test();
+}
+
+static void test_section_numbering() {
+    begin_test("parser: section numbering (:sectnums:)");
+
+    const std::string src =
+        "= Document\n"
+        ":sectnums:\n"
+        "\n"
+        "== First Section\n"
+        "\n"
+        "Content.\n"
+        "\n"
+        "== Second Section\n"
+        "\n"
+        "Content.\n"
+        "\n"
+        "=== Subsection\n"
+        "\n"
+        "Content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    // Find numbered sections
+    int numbered = 0;
+    for (const auto& b : doc->blocks()) {
+        if (b->context() == asciiquack::BlockContext::Section) {
+            const auto& sect = dynamic_cast<const asciiquack::Section&>(*b);
+            if (sect.numbered()) { ++numbered; }
+        }
+    }
+    EXPECT(numbered >= 2);
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "sectnum");
+    EXPECT_CONTAINS(out, "1.");
+    EXPECT_CONTAINS(out, "2.");
+
+    end_test();
+}
+
+static void test_section_numbering_levels() {
+    begin_test("parser: section numbering with :sectnumlevels: 1");
+
+    const std::string src =
+        "= Document\n"
+        ":sectnums:\n"
+        ":sectnumlevels: 1\n"
+        "\n"
+        "== Section A\n"
+        "\n"
+        "=== Subsection\n"
+        "\n"
+        "Text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    // Find level-2 section (===): should NOT be numbered since sectnumlevels is 1
+    bool level2_not_numbered = true;
+    std::function<void(const asciiquack::Block&)> walk;
+    walk = [&](const asciiquack::Block& b) {
+        if (b.context() == asciiquack::BlockContext::Section) {
+            const auto& sect = dynamic_cast<const asciiquack::Section&>(b);
+            if (sect.level() == 2 && sect.numbered()) { level2_not_numbered = false; }
+        }
+        for (const auto& child : b.blocks()) { walk(*child); }
+    };
+    walk(*doc);
+    EXPECT(level2_not_numbered);
+
+    end_test();
+}
+
+static void test_table_of_contents() {
+    begin_test("html5: table of contents (:toc:)");
+
+    const std::string src =
+        "= Document\n"
+        ":toc:\n"
+        "\n"
+        "== Introduction\n"
+        "\n"
+        "Text.\n"
+        "\n"
+        "== Conclusion\n"
+        "\n"
+        "Text.\n";
+
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "id=\"toc\"");
+    EXPECT_CONTAINS(out, "Table of Contents");
+    EXPECT_CONTAINS(out, "Introduction");
+    EXPECT_CONTAINS(out, "Conclusion");
+    // TOC links should reference section IDs
+    EXPECT_CONTAINS(out, "href=\"#_introduction\"");
+
+    end_test();
+}
+
+static void test_toc_custom_title() {
+    begin_test("html5: TOC with custom :toc-title:");
+
+    const std::string src =
+        "= Doc\n"
+        ":toc:\n"
+        ":toc-title: Contents\n"
+        "\n"
+        "== Section\n"
+        "\n"
+        "Text.\n";
+
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "Contents");
+    EXPECT_NOT_CONTAINS(out, "Table of Contents");
+
+    end_test();
+}
+
+static void test_toc_with_sectnums() {
+    begin_test("html5: TOC includes section numbers when :sectnums: set");
+
+    const std::string src =
+        "= Document\n"
+        ":toc:\n"
+        ":sectnums:\n"
+        "\n"
+        "== Alpha\n"
+        "\n"
+        "Text.\n"
+        "\n"
+        "== Beta\n"
+        "\n"
+        "Text.\n";
+
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "id=\"toc\"");
+    // Section numbers should appear in the TOC
+    EXPECT_CONTAINS(out, "1.");
+    EXPECT_CONTAINS(out, "2.");
+
+    end_test();
+}
+
+static void test_ifdef_single_line() {
+    begin_test("parser: ifdef:: single-line form");
+
+    // Attribute is set → content included
+    const std::string src1 =
+        ":myattr:\n"
+        "\n"
+        "ifdef::myattr[Included content.]\n";
+    auto doc1 = asciiquack::Parser::parse_string(src1);
+    bool found1 = false;
+    for (const auto& b : doc1->blocks()) {
+        if (b->source().find("Included content") != std::string::npos) { found1 = true; }
+    }
+    EXPECT(found1);
+
+    // Attribute is NOT set → content excluded
+    const std::string src2 =
+        "ifdef::missing_attr[Should not appear.]\n"
+        "Visible.\n";
+    auto doc2 = asciiquack::Parser::parse_string(src2);
+    bool found2 = false;
+    for (const auto& b : doc2->blocks()) {
+        if (b->source().find("Should not appear") != std::string::npos) { found2 = true; }
+    }
+    EXPECT(!found2);
+
+    end_test();
+}
+
+static void test_ifdef_multiline() {
+    begin_test("parser: ifdef:: multi-line form");
+
+    const std::string src =
+        ":myattr:\n"
+        "\n"
+        "Before.\n"
+        "\n"
+        "ifdef::myattr[]\n"
+        "Conditional content.\n"
+        "endif::myattr[]\n"
+        "\n"
+        "After.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Before.");
+    EXPECT_CONTAINS(out, "Conditional content.");
+    EXPECT_CONTAINS(out, "After.");
+
+    end_test();
+}
+
+static void test_ifdef_multiline_false() {
+    begin_test("parser: ifdef:: multi-line form (false branch skipped)");
+
+    const std::string src =
+        "Before.\n"
+        "\n"
+        "ifdef::missing_attr[]\n"
+        "This should NOT appear.\n"
+        "endif::missing_attr[]\n"
+        "\n"
+        "After.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Before.");
+    EXPECT_NOT_CONTAINS(out, "This should NOT appear.");
+    EXPECT_CONTAINS(out, "After.");
+
+    end_test();
+}
+
+static void test_ifndef_single_line() {
+    begin_test("parser: ifndef:: single-line form");
+
+    // Attribute NOT set → content included
+    const std::string src1 =
+        "ifndef::missing[Included.]\n";
+    auto doc1 = asciiquack::Parser::parse_string(src1);
+    bool found1 = false;
+    for (const auto& b : doc1->blocks()) {
+        if (b->source().find("Included") != std::string::npos) { found1 = true; }
+    }
+    EXPECT(found1);
+
+    // Attribute IS set → content excluded
+    const std::string src2 =
+        ":setattr:\n"
+        "\n"
+        "ifndef::setattr[Should not appear.]\n"
+        "Visible.\n";
+    auto doc2 = asciiquack::Parser::parse_string(src2);
+    bool found2 = false;
+    for (const auto& b : doc2->blocks()) {
+        if (b->source().find("Should not appear") != std::string::npos) { found2 = true; }
+    }
+    EXPECT(!found2);
+
+    end_test();
+}
+
+static void test_ifeval() {
+    begin_test("parser: ifeval:: basic expression");
+
+    // Version attribute set to "1.5"
+    const std::string src =
+        ":version: 1.5\n"
+        "\n"
+        "ifeval::[\"{version}\" >= \"1.0\"]\n"
+        "Version is new enough.\n"
+        "endif::[]\n"
+        "\n"
+        "ifeval::[\"{version}\" >= \"2.0\"]\n"
+        "Should not appear.\n"
+        "endif::[]\n"
+        "\n"
+        "Done.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Version is new enough.");
+    EXPECT_NOT_CONTAINS(out, "Should not appear.");
+    EXPECT_CONTAINS(out, "Done.");
+
+    end_test();
+}
+
+static void test_floating_title() {
+    begin_test("parser+html5: floating title ([discrete])");
+
+    const std::string src =
+        "Normal paragraph.\n"
+        "\n"
+        "[discrete]\n"
+        "== Floating Heading\n"
+        "\n"
+        "Another paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    // The [discrete] section should NOT be a Section node
+    bool has_section = false;
+    for (const auto& b : doc->blocks()) {
+        if (b->context() == asciiquack::BlockContext::Section) { has_section = true; }
+    }
+    EXPECT(!has_section);
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should have an <h2> with class="discrete" but no sect1 wrapper
+    EXPECT_CONTAINS(out, "class=\"discrete\"");
+    EXPECT_CONTAINS(out, "Floating Heading");
+    EXPECT_NOT_CONTAINS(out, "class=\"sect1\"");
+
+    end_test();
+}
+
+static void test_video_block() {
+    begin_test("html5: video block macro");
+
+    std::string out = html("video::demo.mp4[width=640,height=480]\n");
+    EXPECT_CONTAINS(out, "<video");
+    EXPECT_CONTAINS(out, "demo.mp4");
+    EXPECT_CONTAINS(out, "controls");
+
+    end_test();
+}
+
+static void test_audio_block() {
+    begin_test("html5: audio block macro");
+
+    std::string out = html("audio::demo.ogg[]\n");
+    EXPECT_CONTAINS(out, "<audio");
+    EXPECT_CONTAINS(out, "demo.ogg");
+    EXPECT_CONTAINS(out, "controls");
+
+    end_test();
+}
+
+static void test_include_directive() {
+    begin_test("parser: include:: directive (unsafe mode)");
+
+    // Write a temp file to include
+    // Create a temp file with portable path
+    namespace fs = std::filesystem;
+    const std::string tmp_path =
+        (fs::temp_directory_path() / "asciiquack_test_include.adoc").string();
+    {
+        std::ofstream f(tmp_path);
+        f << "Included paragraph.\n";
+    }
+
+    const std::string src =
+        "Before.\n"
+        "\n"
+        "include::" + tmp_path + "[]\n"
+        "\n"
+        "After.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.safe_mode = asciiquack::SafeMode::Unsafe;
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Before.");
+    EXPECT_CONTAINS(out, "Included paragraph.");
+    EXPECT_CONTAINS(out, "After.");
+
+    // Clean up
+    std::remove(tmp_path.c_str());
+
+    end_test();
+}
+
+static void test_include_directive_secure_mode() {
+    begin_test("parser: include:: skipped in secure mode");
+
+    const std::string src =
+        "Before.\n"
+        "include::/tmp/some_file.adoc[]\n"
+        "After.\n";
+
+    // Default mode is Secure – include should be silently ignored
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Before.");
+    EXPECT_CONTAINS(out, "After.");
+
+    end_test();
+}
+
+static void test_bug7_description_list_not_table() {
+    begin_test("bug #7: description list regex does not match | lines");
+
+    // A line starting with | should not be mistaken for a description list
+    const std::string src =
+        "|===\n"
+        "|Col1 |Col2\n"
+        "|a |b\n"
+        "|===\n"
+        "\n"
+        "After table.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    // Should be a table, not a description list
+    bool has_table = false;
+    bool has_dlist = false;
+    for (const auto& b : doc->blocks()) {
+        if (b->context() == asciiquack::BlockContext::Table)  { has_table = true; }
+        if (b->context() == asciiquack::BlockContext::Dlist)  { has_dlist = true; }
+    }
+    EXPECT(has_table);
+    EXPECT(!has_dlist);
+
+    end_test();
+}
+
+static void test_ifeval_numeric() {
+    begin_test("parser: ifeval:: numeric comparison");
+
+    const std::string src =
+        ":counter: 5\n"
+        "\n"
+        "ifeval::[{counter} > 3]\n"
+        "Counter is large.\n"
+        "endif::[]\n"
+        "\n"
+        "ifeval::[{counter} > 10]\n"
+        "Counter is huge.\n"
+        "endif::[]\n"
+        "\n"
+        "Done.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Counter is large.");
+    EXPECT_NOT_CONTAINS(out, "Counter is huge.");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2 features tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_inline_passthrough() {
+    begin_test("substitutors: pass:[] inline passthrough");
+
+    // pass:[] with no subs – content is emitted raw (not HTML-escaped)
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Raw pass:pass:[<b>bold</b>] here.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // The raw HTML should be present (not escaped)
+    EXPECT_CONTAINS(out, "<b>bold</b>");
+    // The pass:[] macro text itself should not appear
+    EXPECT_NOT_CONTAINS(out, "pass:[");
+
+    end_test();
+}
+
+static void test_inline_passthrough_q() {
+    begin_test("substitutors: pass:q[] quotes-only passthrough");
+
+    // pass:q[] applies only quotes substitution inside
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "pass:q[*bold text* inside pass]\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<strong>bold text</strong>");
+
+    end_test();
+}
+
+static void test_kbd_macro() {
+    begin_test("substitutors: kbd:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Press kbd:[Ctrl+T] to open a new tab.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<kbd>Ctrl</kbd>");
+    EXPECT_CONTAINS(out, "<kbd>T</kbd>");
+    EXPECT_CONTAINS(out, "keyseq");
+
+    end_test();
+}
+
+static void test_btn_macro() {
+    begin_test("substitutors: btn:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Click btn:[OK] to continue.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<b class=\"button\">OK</b>");
+
+    end_test();
+}
+
+static void test_menu_macro() {
+    begin_test("substitutors: menu:[] macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Use menu:File[Save] to save.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "<span class=\"menuseq\">");
+    EXPECT_CONTAINS(out, "<span class=\"menu\">File</span>");
+    EXPECT_CONTAINS(out, "<span class=\"menuitem\">Save</span>");
+
+    end_test();
+}
+
+static void test_counter_macro() {
+    begin_test("substitutors: counter: inline macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Item counter:item. Item counter:item. Item counter:item.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // counter:item increments each time; should produce 1, 2, 3
+    EXPECT_CONTAINS(out, "Item 1.");
+    EXPECT_CONTAINS(out, "Item 2.");
+    EXPECT_CONTAINS(out, "Item 3.");
+
+    end_test();
+}
+
+static void test_counter2_macro() {
+    begin_test("substitutors: counter2: does not emit value");
+
+    // counter2: increments but produces no output
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "counter2:hidden. counter2:hidden. Value: counter:hidden.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // counter2: should produce nothing; the final counter: should show 3
+    EXPECT_CONTAINS(out, "Value: 3.");
+
+    end_test();
+}
+
+static void test_footnote_macro() {
+    begin_test("html5: footnote:[] macro rendered at end");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Some text.footnote:[This is a footnote.] More text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Inline footnote reference marker
+    EXPECT_CONTAINS(out, "class=\"footnote\"");
+    EXPECT_CONTAINS(out, "_footnoteref_1");
+    // Footnote body at end of document
+    EXPECT_CONTAINS(out, "id=\"footnotes\"");
+    EXPECT_CONTAINS(out, "This is a footnote.");
+    EXPECT_CONTAINS(out, "_footnotedef_1");
+
+    end_test();
+}
+
+static void test_footnote_multiple() {
+    begin_test("html5: multiple footnotes numbered sequentially");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "First.footnote:[Note one.] Second.footnote:[Note two.]\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "_footnoteref_1");
+    EXPECT_CONTAINS(out, "_footnoteref_2");
+    EXPECT_CONTAINS(out, "Note one.");
+    EXPECT_CONTAINS(out, "Note two.");
+
+    end_test();
+}
+
+static void test_ordered_list_style() {
+    begin_test("html5: [loweralpha] ordered list style");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[loweralpha]\n"
+        ". First\n"
+        ". Second\n"
+        ". Third\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "class=\"loweralpha\"");
+    EXPECT_CONTAINS(out, "olist loweralpha");
+
+    end_test();
+}
+
+static void test_ordered_list_start() {
+    begin_test("html5: [start=3] ordered list start attribute");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[start=3]\n"
+        ". Third item\n"
+        ". Fourth item\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "start=\"3\"");
+
+    end_test();
+}
+
+static void test_special_section_names() {
+    begin_test("html5: special section names ([preface], [appendix])");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[preface]\n"
+        "== Preface\n"
+        "\n"
+        "Preface text.\n"
+        "\n"
+        "[appendix]\n"
+        "== Appendix A\n"
+        "\n"
+        "Appendix text.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "class=\"preface\"");
+    EXPECT_CONTAINS(out, "class=\"appendix\"");
+
+    end_test();
+}
+
+static void test_compound_list_items() {
+    begin_test("parser+html5: compound list items (+ continuation)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "* First item\n"
+        "+\n"
+        "Attached paragraph in first item.\n"
+        "\n"
+        "* Second item\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "First item");
+    EXPECT_CONTAINS(out, "Attached paragraph in first item.");
+    EXPECT_CONTAINS(out, "Second item");
+    // The attached paragraph should be inside the list item
+    auto li_pos  = out.find("<li>");
+    auto para_pos = out.find("Attached paragraph");
+    auto li2_pos = out.find("<li>", li_pos + 1);
+    EXPECT(li_pos  != std::string::npos);
+    EXPECT(para_pos != std::string::npos);
+    EXPECT(li2_pos  != std::string::npos);
+    EXPECT(para_pos < li2_pos);  // attached para comes before the 2nd <li>
+
+    end_test();
+}
+
+static void test_dlist_compound_body() {
+    begin_test("html5: description list with compound body blocks");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "term1::\n"
+        "Body paragraph.\n"
+        "+\n"
+        "Second paragraph.\n"
+        "\n"
+        "term2:: Simple body.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "term1");
+    EXPECT_CONTAINS(out, "Body paragraph.");
+    EXPECT_CONTAINS(out, "term2");
+    EXPECT_CONTAINS(out, "Simple body.");
+
+    end_test();
+}
+
+static void test_idprefix_empty() {
+    begin_test("html5: idprefix empty string (id without leading underscore)");
+
+    const std::string src =
+        "= Doc\n"
+        ":idprefix:\n"
+        ":idseparator: -\n"
+        "\n"
+        "== My Section\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // ID should be "my-section" not "_my_section"
+    EXPECT_CONTAINS(out, "id=\"my-section\"");
+
+    end_test();
+}
+
+static void test_bug4_inline_bold_url() {
+    begin_test("bug #4: constrained bold does not match inside URLs");
+
+    // A URL containing a '*' character should not trigger constrained bold
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "See https://example.com/path*query for details.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // The URL should not be broken by bold substitution
+    EXPECT_CONTAINS(out, "example.com/path");
+    EXPECT_NOT_CONTAINS(out, "<strong>query");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P3 features tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_source_callouts() {
+    begin_test("html5: source callout markers <N> rendered as badges");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[source,ruby]\n"
+        "----\n"
+        "require 'sinatra' <1>\n"
+        "get '/hi' do <2>\n"
+        "  \"Hello!\"\n"
+        "end\n"
+        "----\n"
+        "\n"
+        "<1> Load the library.\n"
+        "<2> Define a route.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+
+    // Callout markers should be replaced with badge elements
+    EXPECT_CONTAINS(out, "class=\"conum\"");
+    EXPECT_CONTAINS(out, "(1)");
+    EXPECT_CONTAINS(out, "(2)");
+    // The callout list should be present
+    EXPECT_CONTAINS(out, "colist");
+    EXPECT_CONTAINS(out, "Load the library.");
+    EXPECT_CONTAINS(out, "Define a route.");
+    // Raw &lt;1&gt; should NOT appear in source code
+    EXPECT_NOT_CONTAINS(out, "&lt;1&gt;");
+
+    end_test();
+}
+
+static void test_admonition_caption_attr() {
+    begin_test("html5: admonition caption from locale attribute");
+
+    const std::string src =
+        "= Doc\n"
+        ":note-caption: Nota\n"
+        ":tip-caption: Consejo\n"
+        "\n"
+        "NOTE: This is a note.\n"
+        "\n"
+        "TIP: This is a tip.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Nota");
+    EXPECT_CONTAINS(out, "Consejo");
+    EXPECT_NOT_CONTAINS(out, ">Note<");  // default should not appear
+
+    end_test();
+}
+
+static void test_admonition_default_captions() {
+    begin_test("html5: admonition default captions (Tip, Warning, Important, Caution)");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "TIP: tip\n"
+        "\n"
+        "WARNING: warn\n"
+        "\n"
+        "IMPORTANT: important\n"
+        "\n"
+        "CAUTION: caution\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "Tip");
+    EXPECT_CONTAINS(out, "Warning");
+    EXPECT_CONTAINS(out, "Important");
+    EXPECT_CONTAINS(out, "Caution");
+
+    end_test();
+}
+
+static void test_stem_inline_macro() {
+    begin_test("substitutors: stem:[] inline math macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "The formula stem:[E = mc^2] is famous.\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should render as MathJax inline math
+    EXPECT_CONTAINS(out, "\\(E = mc^2\\)");
+    EXPECT_NOT_CONTAINS(out, "stem:[");
+
+    end_test();
+}
+
+static void test_latexmath_inline_macro() {
+    begin_test("substitutors: latexmath:[] inline macro");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Inline: latexmath:[\\sum_{i=1}^{n} i].\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "\\(");
+    EXPECT_NOT_CONTAINS(out, "latexmath:[");
+
+    end_test();
+}
+
+static void test_stem_block() {
+    begin_test("html5: [stem] block renders display math");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[stem]\n"
+        "++++\n"
+        "\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n"
+        "++++\n";
+
+    asciiquack::ParseOptions opts;
+    opts.attributes["embedded"] = "";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should wrap in display math delimiters
+    EXPECT_CONTAINS(out, "\\[");
+    EXPECT_CONTAINS(out, "\\]");
+    EXPECT_CONTAINS(out, "stemblock");
+
+    end_test();
+}
+
+static void test_preamble_no_sections() {
+    begin_test("html5: preamble div NOT emitted when no sections");
+
+    // A document with only body content and no sections should not
+    // wrap content in <div id="preamble">
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "Just a paragraph. No sections.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_NOT_CONTAINS(out, "id=\"preamble\"");
+    EXPECT_CONTAINS(out, "Just a paragraph.");
+
+    end_test();
+}
+
+static void test_preamble_with_sections() {
+    begin_test("html5: preamble div emitted when sections follow");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "This is the preamble.\n"
+        "\n"
+        "== Section One\n"
+        "\n"
+        "Section content.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "id=\"preamble\"");
+    EXPECT_CONTAINS(out, "This is the preamble.");
+    EXPECT_CONTAINS(out, "Section One");
+
+    end_test();
+}
+
+static void test_linkcss_attribute() {
+    begin_test("html5: :linkcss: emits <link> tag instead of inline style");
+
+    const std::string src =
+        "= Doc\n"
+        ":linkcss:\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should have a <link> tag, not inline <style>
+    EXPECT_CONTAINS(out, "<link rel=\"stylesheet\"");
+    EXPECT_NOT_CONTAINS(out, "<style>\n/* asciiquack");
+
+    end_test();
+}
+
+static void test_stylesheet_attribute() {
+    begin_test("html5: :stylesheet: path used in <link> tag");
+
+    const std::string src =
+        "= Doc\n"
+        ":linkcss:\n"
+        ":stylesheet: /custom/style.css\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "href=\"/custom/style.css\"");
+
+    end_test();
+}
+
+static void test_stem_mathjax_script() {
+    begin_test("html5: :stem: attribute adds MathJax script to head");
+
+    const std::string src =
+        "= Doc\n"
+        ":stem: latexmath\n"
+        "\n"
+        "Body.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string out = asciiquack::convert_to_html5(*doc);
+    EXPECT_CONTAINS(out, "MathJax");
+    EXPECT_CONTAINS(out, "mathjax");
+
+    end_test();
+}
+
+static void test_doctype_manpage() {
+    begin_test("parser+html5: doctype manpage title parsing");
+
+    const std::string src =
+        "= git-commit(1)\n"
+        "Git Author\n"
+        "\n"
+        "== Name\n"
+        "\n"
+        "git-commit - Record changes to the repository\n";
+
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+
+    // manname and manvolnum should be extracted
+    EXPECT(doc->attr("manname") == "git-commit");
+    EXPECT(doc->attr("manvolnum") == "1");
+
+    std::string out = asciiquack::convert_to_html5(*doc);
+    // Should show volume number in title heading
+    EXPECT_CONTAINS(out, "git-commit(1)");
+    EXPECT_CONTAINS(out, "Manual Page");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -923,6 +1974,61 @@ int main(int argc, char* argv[]) {
     std::cout << "\nIntegration tests:\n";
     test_integration_sample();
     test_integration_basic();
+
+    // P1 features and bug fixes
+    std::cout << "\nP1 features and bug fix tests:\n";
+    test_multiline_attribute_value();
+    test_section_numbering();
+    test_section_numbering_levels();
+    test_table_of_contents();
+    test_toc_custom_title();
+    test_toc_with_sectnums();
+    test_ifdef_single_line();
+    test_ifdef_multiline();
+    test_ifdef_multiline_false();
+    test_ifndef_single_line();
+    test_ifeval();
+    test_ifeval_numeric();
+    test_floating_title();
+    test_video_block();
+    test_audio_block();
+    test_include_directive();
+    test_include_directive_secure_mode();
+    test_bug7_description_list_not_table();
+
+    // P2 features
+    std::cout << "\nP2 features and bug fix tests:\n";
+    test_inline_passthrough();
+    test_inline_passthrough_q();
+    test_kbd_macro();
+    test_btn_macro();
+    test_menu_macro();
+    test_counter_macro();
+    test_counter2_macro();
+    test_footnote_macro();
+    test_footnote_multiple();
+    test_ordered_list_style();
+    test_ordered_list_start();
+    test_special_section_names();
+    test_compound_list_items();
+    test_dlist_compound_body();
+    test_idprefix_empty();
+    test_bug4_inline_bold_url();
+
+    // P3 features
+    std::cout << "\nP3 features tests:\n";
+    test_source_callouts();
+    test_admonition_caption_attr();
+    test_admonition_default_captions();
+    test_stem_inline_macro();
+    test_latexmath_inline_macro();
+    test_stem_block();
+    test_preamble_no_sections();
+    test_preamble_with_sections();
+    test_linkcss_attribute();
+    test_stylesheet_attribute();
+    test_stem_mathjax_script();
+    test_doctype_manpage();
 
     // Summary
     std::cout << "\n============================\n";

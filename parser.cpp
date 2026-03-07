@@ -18,9 +18,12 @@
 
 #include <algorithm>
 #include <cassert>
+#include <filesystem>
+#include <fstream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace asciiquack {
 
@@ -226,7 +229,8 @@ std::optional<ListMatch> match_list_item(const std::string& line) {
         }
     }
     // Description: term:: [optional text]  or  term;;
-    {
+    // Guard: exclude lines that start with '|' (table rows/separators – Bug #7)
+    if (line.empty() || line[0] != '|') {
         static const std::regex rx(
             R"(^(?!//[^/])([ \t]*)([^ \t].+?)(:{2,4}|;;)(?:$|[ \t]+(.+)$))",
             std::regex::ECMAScript | std::regex::optimize);
@@ -268,6 +272,257 @@ std::optional<ImageMacro> match_block_image(const std::string& line) {
     img.attrs  = parse_attribute_list(attr_str);
     img.alt    = img.attrs.count("1") ? img.attrs["1"] : img.target;
     return img;
+}
+
+// ── Video / audio macro detection ────────────────────────────────────────────
+
+struct MediaMacro {
+    BlockContext context;   ///< Video or Audio
+    std::string  target;
+    std::unordered_map<std::string, std::string> attrs;
+};
+
+std::optional<MediaMacro> match_block_media(const std::string& line) {
+    static const std::regex rx(
+        R"(^(video|audio)::(\S[^\[]*)\[(.*)\]$)",
+        std::regex::ECMAScript | std::regex::optimize);
+    std::smatch m;
+    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+    MediaMacro mm;
+    mm.context = (m[1].str() == "video") ? BlockContext::Video : BlockContext::Audio;
+    mm.target  = m[2].str();
+    std::string attr_str = "[" + m[3].str() + "]";
+    mm.attrs   = parse_attribute_list(attr_str);
+    return mm;
+}
+
+// ── Conditional preprocessing helpers ────────────────────────────────────────
+
+/// Evaluate whether an attribute name (possibly compound with +/,) is set.
+/// + means ALL must be set; , means ANY must be set.
+bool evaluate_attr_condition(const std::string& attr_spec,
+                             const Document&    doc) {
+    // Check for '+' (all-of) compound
+    if (attr_spec.find('+') != std::string::npos) {
+        std::istringstream ss(attr_spec);
+        std::string part;
+        while (std::getline(ss, part, '+')) {
+            trim(part);
+            if (!part.empty() && !doc.has_attr(part)) { return false; }
+        }
+        return true;
+    }
+    // Check for ',' (any-of) compound
+    if (attr_spec.find(',') != std::string::npos) {
+        std::istringstream ss(attr_spec);
+        std::string part;
+        while (std::getline(ss, part, ',')) {
+            trim(part);
+            if (!part.empty() && doc.has_attr(part)) { return true; }
+        }
+        return false;
+    }
+    // Simple single attribute
+    return doc.has_attr(attr_spec);
+}
+
+/// Skip lines from @p reader until a matching endif:: directive (or EOF).
+/// Supports one level of nesting.
+void skip_conditional_block(Reader& reader) {
+    int depth = 1;
+    while (reader.has_more_lines() && depth > 0) {
+        auto opt = reader.read_line();
+        if (!opt) { break; }
+        const std::string& l = *opt;
+
+        // Detect nested conditional openings (multi-line form only)
+        if (l.size() > 7) {
+            bool is_open = (l.substr(0, 7) == "ifdef::" ||
+                            l.substr(0, 8) == "ifndef::" ||
+                            l.substr(0, 9) == "ifeval::");
+            if (is_open) {
+                // Only multi-line forms (empty bracket at end) deepen nesting
+                if (!l.empty() && l.back() == ']') {
+                    auto br = l.rfind('[');
+                    if (br != std::string::npos &&
+                        br + 2 == l.size() && l.back() == ']') {
+                        ++depth;
+                        continue;
+                    }
+                }
+            }
+        }
+        if (l.size() >= 7 && l.substr(0, 7) == "endif::") {
+            --depth;
+        }
+    }
+}
+
+/// Process an ifdef:: / ifndef:: directive line.
+/// Returns false if the document pointer is null (shouldn't happen in practice).
+bool handle_conditional(const std::string& line, Reader& reader, const Document* doc) {
+    if (!doc) { return false; }
+
+    bool is_ifdef = (line.size() >= 7 && line.substr(0, 7) == "ifdef::");
+    std::size_t prefix_len = is_ifdef ? 7u : 8u;  // "ifdef::" or "ifndef::"
+
+    auto bracket = line.find('[', prefix_len);
+    if (bracket == std::string::npos) { return false; }
+
+    std::string attr_spec = line.substr(prefix_len, bracket - prefix_len);
+    trim(attr_spec);
+
+    std::string content = line.substr(bracket + 1);
+    if (!content.empty() && content.back() == ']') { content.pop_back(); }
+
+    bool attr_set  = evaluate_attr_condition(attr_spec, *doc);
+    bool condition = is_ifdef ? attr_set : !attr_set;
+
+    if (content.empty()) {
+        // Multi-line form: skip the block if condition is false
+        if (!condition) {
+            skip_conditional_block(reader);
+        }
+    } else {
+        // Single-line form: push inline content back if condition is true
+        if (condition) {
+            reader.unshift_line(content);
+        }
+    }
+    return true;
+}
+
+/// Evaluate a basic ifeval expression of the form:  lhs op rhs
+/// where lhs/rhs are "string", {attr}, or numeric literals.
+bool evaluate_ifeval(const std::string& expr, const Document& doc) {
+    // Expand attribute references in the expression
+    std::string expanded = sub_attributes(expr, doc.attributes());
+    trim(expanded);
+
+    // Tokenise: find the operator
+    static const std::regex op_rx(R"(\s*(==|!=|<=|>=|<|>)\s*)",
+                                   std::regex::ECMAScript | std::regex::optimize);
+    std::sregex_iterator it(expanded.begin(), expanded.end(), op_rx);
+    std::sregex_iterator end_it;
+    if (it == end_it) { return false; }  // no operator found
+
+    const std::smatch& m = *it;
+    std::string lhs_raw = expanded.substr(0, static_cast<std::size_t>(m.position()));
+    std::string op      = m[1].str();
+    std::string rhs_raw = expanded.substr(static_cast<std::size_t>(m.position()) +
+                                          static_cast<std::size_t>(m.length()));
+    trim(lhs_raw); trim(rhs_raw);
+
+    // Strip surrounding quotes
+    auto strip_quotes = [](std::string& s) {
+        if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+            s = s.substr(1, s.size() - 2);
+        }
+    };
+    strip_quotes(lhs_raw);
+    strip_quotes(rhs_raw);
+
+    // Try numeric comparison first
+    try {
+        double lhs_n = std::stod(lhs_raw);
+        double rhs_n = std::stod(rhs_raw);
+        if (op == "==") return lhs_n == rhs_n;
+        if (op == "!=") return lhs_n != rhs_n;
+        if (op == "<")  return lhs_n <  rhs_n;
+        if (op == "<=") return lhs_n <= rhs_n;
+        if (op == ">")  return lhs_n >  rhs_n;
+        if (op == ">=") return lhs_n >= rhs_n;
+    } catch (...) {}
+
+    // Fall back to string comparison
+    if (op == "==") return lhs_raw == rhs_raw;
+    if (op == "!=") return lhs_raw != rhs_raw;
+    if (op == "<")  return lhs_raw <  rhs_raw;
+    if (op == "<=") return lhs_raw <= rhs_raw;
+    if (op == ">")  return lhs_raw >  rhs_raw;
+    if (op == ">=") return lhs_raw >= rhs_raw;
+    return false;
+}
+
+// ── include:: directive helper ────────────────────────────────────────────────
+
+/// Process an include:: directive line and push included content into @p reader.
+void handle_include(const std::string& line, Reader& reader, Document& doc) {
+    // Safe-mode check
+    if (doc.safe_mode() >= SafeMode::Secure) { return; }
+
+    // Depth / count limit
+    if (!doc.try_enter_include()) { return; }
+
+    // Parse:  include::path[opts]
+    const std::size_t prefix_len = 9;  // "include::"
+    auto bracket = line.find('[', prefix_len);
+    if (bracket == std::string::npos) { return; }
+
+    std::string path_str = line.substr(prefix_len, bracket - prefix_len);
+    trim(path_str);
+    if (path_str.empty()) { return; }
+
+    // Expand attribute references in the path
+    path_str = sub_attributes(path_str, doc.attributes());
+
+    // Resolve path relative to the document's base directory
+    namespace fs = std::filesystem;
+    fs::path target_path;
+    try {
+        if (fs::path(path_str).is_relative()) {
+            std::string base = doc.base_dir();
+            if (base.empty()) { base = "."; }
+            target_path = fs::path(base) / path_str;
+        } else {
+            target_path = fs::path(path_str);
+        }
+    } catch (...) {
+        return;
+    }
+
+    // In Safe mode, only allow paths within the base directory
+    if (doc.safe_mode() == SafeMode::Safe) {
+        try {
+            auto canon_target = fs::weakly_canonical(target_path);
+            std::string base  = doc.base_dir();
+            if (base.empty()) { base = "."; }
+            auto canon_base = fs::weakly_canonical(fs::path(base));
+            // Check that the target is under base
+            auto rel = fs::relative(canon_target, canon_base);
+            std::string rel_str = rel.generic_string();
+            if (!rel_str.empty() && rel_str[0] == '.') {
+                return;  // outside base directory
+            }
+        } catch (...) {
+            return;
+        }
+    }
+
+    // Read the file
+    std::ifstream file(target_path);
+    if (!file.is_open()) { return; }
+
+    std::vector<std::string> included_lines;
+    std::string cur;
+    for (std::istreambuf_iterator<char> it(file), end_it; it != end_it; ++it) {
+        char c = *it;
+        if (c == '\n') {
+            if (!cur.empty() && cur.back() == '\r') { cur.pop_back(); }
+            included_lines.push_back(cur);
+            cur.clear();
+        } else {
+            cur += c;
+        }
+    }
+    if (!cur.empty()) {
+        if (cur.back() == '\r') { cur.pop_back(); }
+        included_lines.push_back(cur);
+    }
+
+    // Push the included lines back into the reader (in reverse, so first line
+    // will be read first via unshift_lines)
+    reader.unshift_lines(std::move(included_lines));
 }
 
 // ── Thematic break / page break detection ────────────────────────────────────
@@ -424,6 +679,18 @@ DocumentPtr Parser::parse(Reader& reader, const ParseOptions& opts) {
         doc->set_attr(k, v);
     }
 
+    // Record source file and derive the base directory for include:: resolution
+    const std::string& src_path = reader.source_path();
+    doc->set_source_file(src_path);
+    if (src_path != "<stdin>" && !src_path.empty()) {
+        try {
+            namespace fs = std::filesystem;
+            fs::path p(src_path);
+            std::string base = p.parent_path().string();
+            if (!base.empty()) { doc->set_base_dir(base); }
+        } catch (...) {}
+    }
+
     // Parse the document header (title / author / revision + leading attrs)
     parse_document_header(reader, *doc);
 
@@ -491,6 +758,18 @@ void Parser::parse_document_header(Reader& reader, Document& doc) {
             std::string title = section_title_text(title_line);
             doc.set_doctitle(title);
             doc.header().has_header = true;
+
+            // For doctype: manpage, parse "name(volnum)" from the title
+            // e.g. "git-commit(1)" → manname="git-commit", manvolnum="1"
+            if (doc.doctype() == "manpage") {
+                static const std::regex manpage_rx(R"(^(.+?)\((\d+[a-zA-Z0-9]*)\)$)",
+                    std::regex::ECMAScript | std::regex::optimize);
+                std::smatch mm;
+                if (std::regex_match(title, mm, manpage_rx)) {
+                    doc.set_attr("manname",   mm[1].str());
+                    doc.set_attr("manvolnum", mm[2].str());
+                }
+            }
 
             // Register in catalog
             std::string id_prefix = doc.attr("idprefix", "_");
@@ -567,9 +846,54 @@ void Parser::parse_document_header(Reader& reader, Document& doc) {
             reader.skip_line();
             continue;
         }
-        if (!parse_attribute_entry(line, doc)) { break; }
-        reader.skip_line();
+        // Also handle conditional directives in the header attribute block
+        if (line.size() >= 7 && (line.substr(0, 7) == "ifdef::" ||
+                                  line.substr(0, 8) == "ifndef::")) {
+            reader.skip_line();
+            handle_conditional(line, reader, &doc);
+            continue;
+        }
+        if (line.size() >= 7 && line.substr(0, 7) == "endif::") {
+            reader.skip_line();
+            continue;
+        }
+        if (!parse_attribute_entry(reader, doc)) { break; }
     }
+}
+
+bool Parser::parse_attribute_entry(Reader& reader, Document& doc) {
+    auto peeked = reader.peek_line();
+    if (!peeked) { return false; }
+    std::string line{*peeked};
+
+    auto result = try_parse_attribute_entry(line);
+    if (!result) { return false; }
+
+    reader.skip_line();  // consume the first (and possibly only) attribute line
+
+    auto& [name, value] = *result;
+
+    // Handle trailing ' \' multi-line continuation (Bug #6 / P1#5)
+    while (value.size() >= 2 &&
+           value.back() == '\\' &&
+           value[value.size() - 2] == ' ') {
+        value.resize(value.size() - 2);  // strip trailing ' \'
+        if (!reader.has_more_lines()) { break; }
+        auto next_opt = reader.read_line();
+        if (!next_opt) { break; }
+        std::string cont = *next_opt;
+        trim(cont);
+        if (!value.empty()) { value += ' '; }
+        value += cont;
+    }
+    trim(value);
+
+    if (!name.empty() && name[0] == '!') {
+        doc.remove_attr(name.substr(1));
+    } else {
+        doc.set_attr(name, value);
+    }
+    return true;
 }
 
 bool Parser::parse_attribute_entry(const std::string& line, Document& doc) {
@@ -731,10 +1055,40 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
     // ── Attribute entry ────────────────────────────────────────────────────────
     {
         Document* doc = parent.document();
-        if (doc && parse_attribute_entry(line, *doc)) {
-            reader.skip_line();
+        if (doc && parse_attribute_entry(reader, *doc)) {
             return true;
         }
+    }
+
+    // ── Conditional preprocessing (ifdef:: / ifndef:: / ifeval::) ──────────────
+    if (line.size() >= 7 && (line.substr(0, 7) == "ifdef::" ||
+                              line.substr(0, 8) == "ifndef::")) {
+        reader.skip_line();
+        handle_conditional(line, reader, parent.document());
+        return true;
+    }
+    if (line.size() >= 7 && line.substr(0, 7) == "endif::") {
+        reader.skip_line();  // consume orphaned endif (inside a true block)
+        return true;
+    }
+    if (line.size() > 9 && line.substr(0, 9) == "ifeval::[") {
+        // ifeval: evaluate expression; skip block if false
+        std::string expr = line.substr(9);
+        if (!expr.empty() && expr.back() == ']') { expr.pop_back(); }
+        reader.skip_line();
+        const Document* doc = parent.document();
+        if (!doc || !evaluate_ifeval(expr, *doc)) {
+            skip_conditional_block(reader);
+        }
+        return true;
+    }
+
+    // ── include:: directive ────────────────────────────────────────────────────
+    if (line.size() > 9 && line.substr(0, 9) == "include::") {
+        reader.skip_line();
+        Document* doc_mut = parent.document();
+        if (doc_mut) { handle_include(line, reader, *doc_mut); }
+        return true;
     }
 
     // ── Comment block ─────────────────────────────────────────────────────────
@@ -766,8 +1120,25 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
         return true;
     }
 
-    // ── Section title ─────────────────────────────────────────────────────────
+    // ── Section title (may be floating if [discrete] pending) ─────────────────
     if (section_level(line) >= 0) {
+        // Floating title: [discrete] turns a section heading into a free-standing <hN>
+        auto style_it = pending_attrs.find("1");
+        if (style_it != pending_attrs.end() &&
+            to_lower(style_it->second) == "discrete") {
+            reader.skip_line();  // consume the title line
+            int   lv    = section_level(line);
+            auto  title = section_title_text(line);
+
+            auto block = std::make_shared<Block>(
+                BlockContext::FloatingTitle, &parent, ContentModel::Empty);
+            block->set_source(title);
+            block->set_attr("level", std::to_string(lv));
+            apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
+            parent.append(block);
+            return true;
+        }
+
         auto sect = parse_section(reader, parent, line, pending_attrs);
         if (sect) {
             apply_block_attributes(*sect, pending_attrs, pending_title, pending_id);
@@ -892,6 +1263,17 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
         return true;
     }
 
+    // ── Video / audio block macro ──────────────────────────────────────────────
+    if (auto mm = match_block_media(line)) {
+        reader.skip_line();
+        auto block = std::make_shared<Block>(mm->context, &parent, ContentModel::Empty);
+        block->set_attr("target", mm->target);
+        for (auto& [k, v] : mm->attrs) { block->set_attr(k, v); }
+        apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
+        parent.append(block);
+        return true;
+    }
+
     // ── List item ─────────────────────────────────────────────────────────────
     if (auto lm = match_list_item(line)) {
         auto lst = parse_list(reader, parent, lm->type, line, pending_attrs);
@@ -944,6 +1326,41 @@ std::shared_ptr<Section> Parser::parse_section(
         const_cast<Document*>(doc)->register_ref(sect->id(), title);  // NOLINT
     }
 
+    // ── Section numbering (P1 #4) ─────────────────────────────────────────────
+    if (doc && doc->has_attr("sectnums") && level >= 1) {
+        int secnumlevel = 3;  // default depth
+        if (doc->has_attr("sectnumlevels")) {
+            try { secnumlevel = std::stoi(doc->attr("sectnumlevels")); }
+            catch (...) {}
+        }
+        if (level <= secnumlevel) {
+            Document* doc_mut = const_cast<Document*>(doc);  // NOLINT
+            doc_mut->reset_secnums_below(level);
+            int num = doc_mut->increment_secnum(level);
+            sect->set_numbered(true);
+            sect->set_number(num);
+
+            // Build the full number string: "1.", "1.2.", "1.2.3.", …
+            std::string numstr;
+            for (int l = 1; l <= level; ++l) {
+                if (!numstr.empty()) { numstr += '.'; }
+                numstr += std::to_string(doc_mut->secnum_at(l));
+            }
+            numstr += '.';
+            sect->set_sectnum_string(numstr);
+        }
+    }
+
+    // ── TOC entry registration (P1 #3) ───────────────────────────────────────
+    if (doc && level >= 1) {
+        TocEntry entry;
+        entry.id      = sect->id();
+        entry.title   = title;
+        entry.level   = level;
+        entry.sectnum = sect->sectnum_string();
+        const_cast<Document*>(doc)->add_toc_entry(std::move(entry));  // NOLINT
+    }
+
     // Determine the expected child section level
     int child_level = level + 1;
 
@@ -960,13 +1377,33 @@ std::shared_ptr<Section> Parser::parse_section(
             // Next section at same or higher level – stop here.
             break;
         }
-        if (next_level == child_level) {
-            // Nested section
+        if (next_level == child_level || next_level > child_level) {
+            // Nested section (accepts deeper-than-expected nesting for flexibility)
             std::unordered_map<std::string, std::string> sub_attrs;
             auto sub = parse_section(reader, *sect, next_line, sub_attrs);
             if (sub) { sect->append(sub); }
         } else {
             parse_next_block(reader, *sect);
+        }
+    }
+
+    // ── Special section names ([preface], [appendix], …) ─────────────────────
+    // If the immediately preceding block-attribute line set a style that is a
+    // recognised special section name, apply it to the section.
+    {
+        static const std::unordered_set<std::string> special_names = {
+            "preface", "appendix", "abstract", "colophon",
+            "glossary", "bibliography", "index"
+        };
+        auto sit = pending_attrs.find("1");
+        if (sit != pending_attrs.end()) {
+            std::string sname = sit->second;
+            for (char& c : sname) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+            if (special_names.count(sname)) {
+                sect->set_special(true);
+                sect->set_sectname(sname);
+                sect->set_style(sname);
+            }
         }
     }
 
@@ -1099,9 +1536,27 @@ std::shared_ptr<List> Parser::parse_list(
         ListType list_type, const std::string& first_line,
         std::unordered_map<std::string, std::string>& pending_attrs)
 {
-    (void)pending_attrs;
-
     auto list = std::make_shared<List>(list_type, &parent);
+
+    // ── Apply ordered-list style from block attribute ─────────────────────────
+    if (list_type == ListType::Ordered) {
+        auto sit = pending_attrs.find("1");
+        if (sit != pending_attrs.end()) {
+            std::string style_lc = sit->second;
+            for (char& c : style_lc) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+            if      (style_lc == "arabic")     { list->set_ordered_style(OrderedListStyle::Arabic); }
+            else if (style_lc == "loweralpha") { list->set_ordered_style(OrderedListStyle::LowerAlpha); }
+            else if (style_lc == "upperalpha") { list->set_ordered_style(OrderedListStyle::UpperAlpha); }
+            else if (style_lc == "lowerroman") { list->set_ordered_style(OrderedListStyle::LowerRoman); }
+            else if (style_lc == "upperroman") { list->set_ordered_style(OrderedListStyle::UpperRoman); }
+        }
+        // start= attribute
+        auto start_it = pending_attrs.find("start");
+        if (start_it != pending_attrs.end()) {
+            list->set_attr("start", start_it->second);
+        }
+    }
+    (void)pending_attrs;
 
     // Determine the first marker so we can detect siblings vs sub-lists
     auto first_match = match_list_item(first_line);
@@ -1109,7 +1564,8 @@ std::shared_ptr<List> Parser::parse_list(
     std::string root_marker = first_match->marker;
 
     // Helper: collect lines for the item body (up to blank line or next
-    // same-level item)
+    // same-level item).  After the first line, a '+' on its own line
+    // introduces compound block content that is parsed into the item.
     auto collect_item = [&](const std::string& text_line) -> std::shared_ptr<ListItem> {
         auto item = std::make_shared<ListItem>(list.get());
         item->set_marker(root_marker);
@@ -1119,31 +1575,68 @@ std::shared_ptr<List> Parser::parse_list(
         if (!lm) { return nullptr; }
 
         if (list_type == ListType::Description) {
-            item->set_term(text_line.substr(0, text_line.find(lm->marker)));
-            trim(const_cast<std::string&>(item->term()));
+            // term is everything before the '::' / ';;' marker
+            auto marker_pos = text_line.find(lm->marker);
+            std::string term = (marker_pos != std::string::npos)
+                                ? text_line.substr(0, marker_pos)
+                                : text_line;
+            trim(term);
+            item->set_term(term);
         }
 
-        // Collect continuation lines
+        // Collect simple text continuation lines
         std::string src = lm->text;
-        // Check for list continuation (+)
+
         while (reader.has_more_lines()) {
             auto peeked = reader.peek_line();
             if (!peeked) { break; }
             std::string nxt{*peeked};
+
             if (is_blank(nxt)) { break; }
+
             // Sibling list item at the same level
             if (auto nm = match_list_item(nxt)) {
                 if (nm->type == list_type && nm->marker == root_marker) { break; }
             }
-            // List continuation (+ on its own line)
-            if (nxt == "+") { reader.skip_line(); continue; }
-            // Otherwise it's continuation text
+
+            // List continuation '+' – what follows may be block content
+            if (nxt == "+") {
+                reader.skip_line();  // consume '+'
+                // Set source so far on the item before parsing the attached block
+                if (!src.empty()) {
+                    item->set_source(src);
+                    src.clear();
+                }
+                // Skip blank lines before the next attached block
+                reader.skip_blank_lines();
+                if (!reader.has_more_lines()) { break; }
+
+                // Peek next: if it looks like a block delimiter or starts with the
+                // list marker, parse it as a block attached to this item.
+                parse_next_block(reader, *item);
+
+                // After the attached block there may be another '+' continuation
+                reader.skip_blank_lines();
+                if (!reader.has_more_lines()) { break; }
+                auto after = reader.peek_line();
+                if (!after) { break; }
+                std::string after_str{*after};
+                // If the next line is another same-level list item, stop here
+                if (auto nm = match_list_item(after_str)) {
+                    if (nm->type == list_type && nm->marker == root_marker) { break; }
+                }
+                continue;
+            }
+
+            // Otherwise it's simple text continuation
             reader.skip_line();
             src += ' ';
             src += nxt;
         }
 
-        item->set_source(src);
+        if (!src.empty()) {
+            item->set_source(src);
+        }
         return item;
     };
 
