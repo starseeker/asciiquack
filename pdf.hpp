@@ -559,9 +559,6 @@ public:
 
     void admonition(const std::string& label, const std::string& body_text) {
         float lh = BODY_SIZE * LINE_RATIO;
-        float indent = 54.0f;  // leave room for the label on the left
-
-        ensure_space(lh * 2.0f);
 
         // Label (NOTE, TIP, etc.) in bold
         std::string lbl = label;
@@ -569,6 +566,14 @@ public:
             c = static_cast<char>(
                     std::toupper(static_cast<unsigned char>(c)));
         }
+
+        // Indent body text past the label.  Computed dynamically so that long
+        // labels like "IMPORTANT:" don't overflow into the body text area.
+        float indent = tw(lbl + ":", minipdf::FontStyle::Bold, BODY_SIZE)
+                       + BODY_SIZE;  ///< label width + one-em gap
+
+        ensure_space(lh * 2.0f);
+
         page_->place_text(MARGIN_LEFT, cursor_y_,
                           minipdf::FontStyle::Bold, BODY_SIZE, lbl + ":");
 
@@ -820,7 +825,7 @@ public:
         page_->draw_hline(table_x, cursor_y_, table_x + table_w,
                           bdr, bdr_grey, bdr_grey, bdr_grey);
 
-        cursor_y_ -= BODY_SIZE * 0.5f;   // gap below table
+        cursor_y_ -= BODY_SIZE * 1.2f;   // gap below table
     }
 
 private:
