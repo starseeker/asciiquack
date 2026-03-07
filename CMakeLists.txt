@@ -122,6 +122,106 @@ function(aqregex_configure target)
     endif()
 endfunction()
 
+# ── Syntax highlighting via µlight ────────────────────────────────────────────
+# µlight (vendor/ulight/) requires C++23 to build; the project itself stays at
+# C++17.  The two can coexist in one binary because the interface between them
+# is the plain-C API declared in vendor/ulight/include/ulight/ulight.h.
+#
+# Detection uses try_compile rather than compiler-version checks so that it
+# works correctly on any compiler (GCC, Clang, MSVC, ICC, …) without
+# hard-coding version numbers.
+#
+# Options:
+#   USE_ULIGHT=ON  (default)
+#       Try to build the embedded vendor/ulight/ library with C++23.
+#       If the compiler does not support C++23, ulight is silently disabled.
+#   USE_ULIGHT=OFF
+#       Skip syntax highlighting unconditionally.
+
+option(USE_ULIGHT "Enable syntax highlighting via embedded µlight (requires C++23)" ON)
+
+set(_ulight_enabled FALSE)
+
+if(USE_ULIGHT)
+    # Probe for the specific C++23 features ulight uses: std::expected,
+    # char8_t, consteval, if !consteval, and static lambdas.
+    # vendor/ulight_cxx23_check.cpp exercises all of them.
+    try_compile(_ulight_cxx23_ok
+        "${CMAKE_BINARY_DIR}/ulight_cxx23_check"
+        SOURCES "${CMAKE_SOURCE_DIR}/vendor/ulight_cxx23_check.cpp"
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    if(_ulight_cxx23_ok)
+        set(_ulight_enabled TRUE)
+    else()
+        message(STATUS "  Syntax highlighting (ulight): DISABLED "
+                       "(compiler does not support required C++23 features)")
+    endif()
+endif()
+
+if(_ulight_enabled)
+    # Build all ulight library TUs as a separate static library compiled at
+    # C++23.  The main project (C++17) links against it via the C API only.
+    add_library(ulight_vendor STATIC
+        vendor/ulight/src/chars.cpp
+        vendor/ulight/src/io.cpp
+        vendor/ulight/src/parse_utils.cpp
+        vendor/ulight/src/ulight.cpp
+        vendor/ulight/src/lang/bash.cpp
+        vendor/ulight/src/lang/cowel.cpp
+        vendor/ulight/src/lang/cpp.cpp
+        vendor/ulight/src/lang/css.cpp
+        vendor/ulight/src/lang/diff.cpp
+        vendor/ulight/src/lang/ebnf.cpp
+        vendor/ulight/src/lang/html.cpp
+        vendor/ulight/src/lang/js.cpp
+        vendor/ulight/src/lang/json.cpp
+        vendor/ulight/src/lang/kotlin.cpp
+        vendor/ulight/src/lang/llvm.cpp
+        vendor/ulight/src/lang/lua.cpp
+        vendor/ulight/src/lang/nasm.cpp
+        vendor/ulight/src/lang/python.cpp
+        vendor/ulight/src/lang/rust.cpp
+        vendor/ulight/src/lang/tex.cpp
+        vendor/ulight/src/lang/xml.cpp
+    )
+
+    set_target_properties(ulight_vendor PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    # PUBLIC so that consumers automatically get the include path and
+    # therefore can #include "ulight/ulight.h" without extra setup.
+    target_include_directories(ulight_vendor PUBLIC
+        "${CMAKE_SOURCE_DIR}/vendor/ulight/include"
+    )
+
+    # Silence all warnings from the vendored C++23 code; they are not our
+    # responsibility to fix and would clutter the build output.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(ulight_vendor PRIVATE -w)
+    elseif(MSVC)
+        target_compile_options(ulight_vendor PRIVATE /w)
+    endif()
+
+    message(STATUS "  Syntax highlighting: embedded µlight (C++23 TUs, C API)")
+else()
+    message(STATUS "  Syntax highlighting: disabled")
+endif()
+
+# Helper: attach µlight to a target when it is available.
+function(ulight_configure target)
+    if(_ulight_enabled)
+        target_link_libraries(${target} PRIVATE ulight_vendor)
+        target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_ULIGHT)
+    endif()
+endfunction()
+
 # ── Main executable ───────────────────────────────────────────────────────────
 add_executable(asciiquack
     asciiquack.cpp
@@ -130,6 +230,7 @@ add_executable(asciiquack
 )
 target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
 aqregex_configure(asciiquack)
+ulight_configure(asciiquack)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build the C++ test suite" ON)
@@ -144,6 +245,7 @@ if(BUILD_TESTS)
     )
     target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR})
     aqregex_configure(asciiquack_tests)
+    ulight_configure(asciiquack_tests)
 
     add_test(NAME asciiquack_tests COMMAND asciiquack_tests)
 endif()
@@ -159,6 +261,7 @@ if(BUILD_BENCHMARK)
     )
     target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
     aqregex_configure(bench_asciiquack)
+    ulight_configure(bench_asciiquack)
 endif()
 
 # ── Install ───────────────────────────────────────────────────────────────────

@@ -19,7 +19,140 @@
 #include <string>
 #include <unordered_map>
 
+#ifdef ASCIIQUACK_USE_ULIGHT
+#include "ulight/ulight.h"
+#endif
+
 namespace asciiquack {
+
+#ifdef ASCIIQUACK_USE_ULIGHT
+// ─────────────────────────────────────────────────────────────────────────────
+// µlight syntax-highlighting helper
+// ─────────────────────────────────────────────────────────────────────────────
+// highlight_with_ulight() calls the µlight C API to produce HTML for a source
+// block.  The returned HTML uses <h- data-h=TYPE>...</h-> spans; see
+// ulight_highlight_css() for the matching stylesheet.
+//
+// Returns an empty string when the language is unknown to µlight, so the
+// caller can fall back to plain verbatim output.
+//
+// The function is compiled as C++17 even though ulight itself was compiled
+// as C++23; the two meet only through the plain-C ulight.h ABI.
+
+[[nodiscard]] inline std::string highlight_with_ulight(
+    const std::string& source,
+    const std::string& language)
+{
+    // Map the AsciiDoc language name to a ulight language code.
+    const ulight_lang lang = ulight_get_lang(language.c_str(), language.size());
+    if (lang == ULIGHT_LANG_NONE) {
+        return {};  // unknown language → caller uses plain verbatim output
+    }
+
+    // Stack-allocated buffers.  ulight flushes them via the callback when full.
+    static constexpr std::size_t TOKEN_BUF_SIZE = 4096;
+    static constexpr std::size_t TEXT_BUF_SIZE  = 8192;
+    ulight_token token_buf[TOKEN_BUF_SIZE];
+    char         text_buf[TEXT_BUF_SIZE];
+
+    std::string result;
+    result.reserve(source.size() * 3);  // highlighted HTML is typically ~3× raw
+
+    ulight_state state;
+    ulight_init(&state);
+
+    state.source        = source.c_str();
+    state.source_length = source.size();
+    state.lang          = lang;
+    // Merge adjacent tokens with the same type for more compact output.
+    state.flags         = ULIGHT_COALESCE;
+
+    state.token_buffer        = token_buf;
+    state.token_buffer_length = TOKEN_BUF_SIZE;
+
+    state.text_buffer        = text_buf;
+    state.text_buffer_length = TEXT_BUF_SIZE;
+
+    // flush_text_data is passed as the first argument to the callback.
+    // Cast to const void* here; cast back inside the lambda.
+    state.flush_text_data = &result;
+    state.flush_text = [](const void* data, char* text, std::size_t length) {
+        static_cast<std::string*>(const_cast<void*>(data))->append(text, length);
+    };
+
+    const ulight_status status = ulight_source_to_html(&state);
+    ulight_destroy(&state);
+
+    if (status != ULIGHT_STATUS_OK) {
+        return {};  // highlighting failed → fall back to verbatim
+    }
+
+    return result;
+}
+
+/// Returns CSS rules that style the <h- data-h=TYPE> spans emitted by µlight.
+/// Uses a dark (One-Dark-compatible) palette matching the existing
+/// .listingblock pre background (#282c34).
+[[nodiscard]] inline std::string ulight_highlight_css()
+{
+    // The selectors target the non-standard <h-> element by its data-h attribute.
+    // Browsers treat unknown elements as inline, so no extra display:inline needed.
+    return
+        // errors
+        "h-[data-h=err]{color:#e06c75}\n"
+        // comments
+        "h-[data-h=cmt],h-[data-h=cmt_dlim],"
+        "h-[data-h=cmt_doc],h-[data-h=cmt_doc_dlim]{color:#7f848e;font-style:italic}\n"
+        // strings
+        "h-[data-h=str],h-[data-h=str_dlim],"
+        "h-[data-h=str_deco]{color:#98c379}\n"
+        "h-[data-h=str_esc],h-[data-h=str_intp],"
+        "h-[data-h=str_intp_dlim]{color:#56b6c2}\n"
+        // numbers
+        "h-[data-h=num],h-[data-h=num_dlim],"
+        "h-[data-h=num_deco]{color:#d19a66}\n"
+        // keywords
+        "h-[data-h=kw],h-[data-h=kw_ctrl],"
+        "h-[data-h=kw_op],h-[data-h=kw_this]{color:#c678dd}\n"
+        "h-[data-h=kw_type]{color:#e5c07b}\n"
+        // names / identifiers
+        "h-[data-h=name],h-[data-h=name_decl]{color:#abb2bf}\n"
+        "h-[data-h=name_fun],h-[data-h=name_fun_decl],"
+        "h-[data-h=name_fun_pre]{color:#61afef}\n"
+        "h-[data-h=name_type],h-[data-h=name_type_decl],"
+        "h-[data-h=name_type_pre]{color:#e5c07b}\n"
+        "h-[data-h=name_var],h-[data-h=name_var_decl]{color:#e06c75}\n"
+        "h-[data-h=name_cons],h-[data-h=name_cons_decl],"
+        "h-[data-h=name_cons_pre]{color:#d19a66}\n"
+        "h-[data-h=name_mac],h-[data-h=name_mac_decl],"
+        "h-[data-h=name_mac_pre],h-[data-h=name_dirt],"
+        "h-[data-h=name_dirt_pre]{color:#56b6c2}\n"
+        "h-[data-h=name_life],h-[data-h=name_life_decl]{color:#d19a66}\n"
+        "h-[data-h=name_attr],h-[data-h=name_attr_decl]{color:#e5c07b}\n"
+        "h-[data-h=name_inst],h-[data-h=name_inst_decl],"
+        "h-[data-h=asm_inst_pre]{color:#56b6c2}\n"
+        "h-[data-h=name_labl],h-[data-h=name_labl_decl]{color:#e06c75}\n"
+        "h-[data-h=name_para],h-[data-h=name_para_decl]{color:#e06c75}\n"
+        "h-[data-h=name_cmd],h-[data-h=name_opt]{color:#61afef}\n"
+        "h-[data-h=name_nt],h-[data-h=name_nt_decl]{color:#56b6c2}\n"
+        // symbols / operators / punctuation
+        "h-[data-h=sym_op]{color:#56b6c2}\n"
+        "h-[data-h=sym_punc]{color:#abb2bf}\n"
+        "h-[data-h=sym_brac],h-[data-h=sym_par],"
+        "h-[data-h=sym_sqr],h-[data-h=sym_bket]{color:#abb2bf}\n"
+        // diff
+        "h-[data-h=diff_del],h-[data-h=diff_del_dlim]{color:#e06c75}\n"
+        "h-[data-h=diff_ins],h-[data-h=diff_ins_dlim]{color:#98c379}\n"
+        "h-[data-h=diff_head],h-[data-h=diff_head_dlim],"
+        "h-[data-h=diff_head_hunk],h-[data-h=diff_head_hunk_dlim]{color:#7f848e}\n"
+        "h-[data-h=diff_mod],h-[data-h=diff_mod_dlim]{color:#d19a66}\n"
+        // markup (HTML/XML)
+        "h-[data-h=mk_tag],h-[data-h=mk_tag_decl],"
+        "h-[data-h=mk_tag_dlim]{color:#e06c75}\n"
+        "h-[data-h=mk_attr],h-[data-h=mk_attr_decl]{color:#d19a66}\n"
+        "h-[data-h=mk_attr_pre]{color:#61afef}\n";
+}
+#endif  // ASCIIQUACK_USE_ULIGHT
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Html5Converter
@@ -454,18 +587,35 @@ private:
         }
         out << "<div class=\"content\">\n";
 
-        // Apply verbatim escaping, then callout substitution
-        std::string escaped = verbatim(block.source());
-        // Replace HTML-escaped callout markers &lt;N&gt; with badge elements
-        // Use the block id (if any) to generate unique anchors
-        std::string src_html = substitute_callouts(escaped, block.id());
-
         if (is_source && !language.empty()) {
+#ifdef ASCIIQUACK_USE_ULIGHT
+            // Attempt syntax highlighting via µlight.  On success the returned
+            // HTML already contains &lt;/&gt; escaping, so we run callout
+            // substitution directly on it.  On failure (language unknown to
+            // µlight) we fall through to the plain-verbatim path below.
+            std::string hl = highlight_with_ulight(block.source(), language);
+            if (!hl.empty()) {
+                std::string src_html = substitute_callouts(hl, block.id());
+                out << "<pre class=\"highlight\"><code class=\"language-" << language
+                    << "\" data-lang=\"" << language << "\">"
+                    << src_html
+                    << "</code></pre>\n";
+                out << "</div>\n";  // content
+                out << "</div>\n";  // listingblock
+                return;
+            }
+#endif  // ASCIIQUACK_USE_ULIGHT
+            // Fallback: plain verbatim with HTML escaping (no syntax colours).
+            std::string escaped  = verbatim(block.source());
+            std::string src_html = substitute_callouts(escaped, block.id());
             out << "<pre class=\"highlight\"><code class=\"language-" << language
                 << "\" data-lang=\"" << language << "\">"
                 << src_html
                 << "</code></pre>\n";
         } else {
+            // Apply verbatim escaping, then callout substitution
+            std::string escaped  = verbatim(block.source());
+            std::string src_html = substitute_callouts(escaped, block.id());
             out << "<pre>" << src_html << "</pre>\n";
         }
 
@@ -1209,7 +1359,12 @@ private:
             ".colist{margin:.5em 0}\n"
             ".colist ol{list-style:none;padding-left:0}\n"
             // stem / math
-            ".stemblock{margin:1em 0}\n";
+            ".stemblock{margin:1em 0}\n"
+#ifdef ASCIIQUACK_USE_ULIGHT
+            // µlight syntax-highlighting token colours (One Dark palette)
+            + ulight_highlight_css()
+#endif
+            ;
     }
 };
 
