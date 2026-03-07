@@ -63,7 +63,10 @@ struct InlineContext {
 // We use STX (\x02) and ETX (\x03) as placeholder delimiters.  They don't
 // appear in normal text and survive all subsequent substitution steps.
 
-/// Extract pass:[] macros, stash their content, and insert numeric placeholders.
+/// Extract pass:[] macros from @p text, store their (possibly processed) content
+/// in @p stash, and return the text with each macro replaced by a numeric
+/// placeholder ("\x02<index>\x03").  @p stash may be passed to restore_pass_macros()
+/// after all other substitutions have been applied to the placeholder text.
 [[nodiscard]] inline std::string extract_pass_macros(
         const std::string& text,
         std::vector<std::string>& stash)
@@ -645,8 +648,13 @@ inline std::string apply_quote_rx(
 // 5b. Footnote + counter macro substitutions (context-aware)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Apply footnote:[] / footnoteref:[] and counter:/counter2: macros.
-/// These require mutable state from @p ctx.
+/// Apply counter:/counter2: and footnote:/footnoteref: macros to @p text,
+/// updating the mutable state in @p ctx.
+///
+/// Returns the transformed text:
+///   - counter:name  →  incremented value (string) inserted inline
+///   - counter2:name →  empty string (counter is incremented but not emitted)
+///   - footnote:[text] →  inline superscript reference; text added to ctx.footnotes
 [[nodiscard]] inline std::string sub_macros_with_ctx(
         const std::string& text,
         InlineContext& ctx)

@@ -781,6 +781,9 @@ private:
 
     // ── Footnotes section ─────────────────────────────────────────────────────
 
+    /// Render the footnote section at the end of the document.
+    /// Each entry in @p footnotes becomes a numbered definition that back-links
+    /// to its inline reference marker.
     void convert_footnotes(const std::vector<FootnoteEntry>& footnotes,
                            const Document& doc,
                            std::ostringstream& out) const {
