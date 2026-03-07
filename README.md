@@ -64,4 +64,4 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 
 - µlight (https://github.com/eisenwave/ulight) is used for syntax highlighting if the compiler supports C++23
 - Command line options are supported via https://github.com/jarro2783/cxxopts
-- minimal subset of libharu
+- minimal subset of libharu: https://github.com/libharu/libharu
