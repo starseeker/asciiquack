@@ -102,22 +102,6 @@ The items below are grouped by priority.  Items are **P3** (advanced or rarely u
 
 ### P3 – Advanced / Optional
 
-19. **Extensions API** (`register`, `preprocessor`, `block_processor`, etc.)
-    - The Ruby extensions model (`lib/asciidoctor/extensions.rb`, 1551 lines)
-      is very large and tightly coupled to the Ruby object model.  A C++
-      equivalent would require a plugin ABI or embedded scripting engine.
-    - **Recommendation:** defer; document extension point interfaces instead.
-
-20. **Syntax highlighting** (coderay, highlight.js, pygments, rouge)
-    - Currently source blocks emit plain `<code>` tags without highlighting.
-    - Could integrate a C++ highlighting library (e.g. `highlight`) or emit
-      the data attributes that a client-side JS library expects.
-    - Ruby source: `lib/asciidoctor/syntax_highlighter/`.
-
-21. **DocBook 5 backend** (`-b docbook5`)
-    - The CLI already falls back to html5 for unknown backends.
-    - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
-
 22. **Man page backend** (`-b manpage`)
     - Ruby source: `lib/asciidoctor/converter/manpage.rb` (757 lines).
     - `doctype: manpage` title parsing is already implemented;
@@ -142,6 +126,34 @@ The items below are grouped by priority.  Items are **P3** (advanced or rarely u
 26. **Section nesting validation**
     - Section nesting deeper than one level beyond parent is silently accepted.
     - Ruby source: `lib/asciidoctor/section.rb`.
+
+---
+
+## To investigate
+
+PDF output is one of the potentially interesting targets for asciiquack -
+what would be involved with duplicating asciidoc's abilities in that
+regard?  Could it be done without translating a massive dependency chain?
+
+---
+
+## Probably pass - items too complex to be worthwhile without clear need
+
+19. **Extensions API** (`register`, `preprocessor`, `block_processor`, etc.)
+    - The Ruby extensions model (`lib/asciidoctor/extensions.rb`, 1551 lines)
+      is very large and tightly coupled to the Ruby object model.  A C++
+      equivalent would require a plugin ABI or embedded scripting engine.
+    - **Recommendation:** defer; document extension point interfaces instead.
+
+20. **Syntax highlighting** (coderay, highlight.js, pygments, rouge)
+    - Currently source blocks emit plain `<code>` tags without highlighting.
+    - Could integrate a C++ highlighting library (e.g. `highlight`) or emit
+      the data attributes that a client-side JS library expects.
+    - Ruby source: `lib/asciidoctor/syntax_highlighter/`.
+
+21. **DocBook 5 backend** (`-b docbook5`)
+    - The CLI already falls back to html5 for unknown backends.
+    - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
 
 ---
 
