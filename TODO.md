@@ -84,6 +84,8 @@
 | Stylesheet linking (`:linkcss:`, `:stylesheet:`) | |
 | `docinfo.html` / `docinfo-footer.html` injection (unsafe mode) | |
 | Preamble `<div>` only when sections follow | |
+| PDF backend (`-b pdf`, Letter/A4, headings, lists, code, admonitions, inline markup) | |
+| PDF font embedding (`-a pdf-font=/path/to/font.ttf`; PostScript name and OS/2 metrics read from font) | |
 | Logging: missing include file warning | |
 | Logging: section nesting skip warning | |
 | Logging: unclosed block warning | |
@@ -97,10 +99,6 @@
 Source blocks currently emit plain `<code>` tags.  A future pass could
 integrate a C++ highlighting library or emit the `data-lang` attributes
 needed by a client-side JS highlighter such as highlight.js.
-
-### PDF output
-
-See the PDF section below.
 
 ---
 
@@ -116,16 +114,37 @@ See the PDF section below.
 
 ## PDF Output
 
-`struetype.h`, `utf8/`, `TextFlow.hpp`, and a stripped-down copy of `libharu`
-are included in the repository as a starting point for a native PDF backend.
-The goal is basic, decent-looking output; polished HTML-to-PDF via a web
-browser remains the recommended path for production use.
+The PDF backend (`-b pdf`) is implemented in `pdf.hpp` using `minipdf.hpp`,
+a self-contained C++17 PDF writer derived from libharu concepts.  It uses
+`struetype.h` (an stb-style TrueType parser) for optional font embedding.
 
-Work needed:
-- Identify the minimal libharu API surface needed and rework into a single
-  C++17 header-only file (preserving the original copyright / license header).
-- Generalise `TextFlow.hpp` using the utf8 and struetype helpers as appropriate.
-- Implement a `pdf.hpp` backend analogous to `html5.hpp`.
+Features:
+- Letter (8.5"×11") and A4 page sizes (`-a pdf-page-size=A4`)
+- Section headings (H1–H4), paragraphs, ordered/unordered lists
+- Code/listing blocks (Courier font), admonition blocks, horizontal rules
+- Inline bold, italic, monospace markup
+- Multi-page layout with automatic page breaks
+
+### Embedded TrueType fonts
+
+By default the PDF uses the PDF base-14 fonts (Helvetica family + Courier).
+To embed a custom TrueType body font:
+
+```bash
+asciiquack -b pdf -a pdf-font=/path/to/MyFont.ttf input.adoc
+```
+
+The font file is read once and the raw bytes are stored as a `/FontFile2`
+stream.  A `FontDescriptor` object is generated with:
+- **Metrics** from the OS/2 typographic table (`/Ascent`, `/Descent`,
+  `/CapHeight`) — more accurate for PDF viewers than the hhea table values.
+- **PostScript name** (`/FontName`, `/BaseFont`) extracted from the font's
+  own name table (nameID=6), falling back to the filename stem.
+- **`/Widths` array** for code points 32–255, derived from the font's
+  horizontal metrics.
+
+Bold, italic, and monospace text continue to use the PDF base-14 fonts
+(Helvetica-Bold, Helvetica-Oblique, Courier).
 
 ---
 
