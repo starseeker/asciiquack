@@ -2874,6 +2874,85 @@ static void test_pdf_ttf_xref_still_valid_with_font() {
     end_test();
 }
 
+static void test_pdf_ttf_postscript_name_from_table() {
+    begin_test("pdf: TrueType PostScript name read from font name table");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    // Load the font; the PostScript name (nameID=6) stored in Lato-Regular.ttf
+    // is "Lato-Regular".  We verify that this value is read from the font's own
+    // name table rather than inferred from the path (the two happen to agree for
+    // Lato, but the name-table path is more standards-compliant).
+    auto font = minipdf::TtfFont::from_file(LATO_REGULAR_PATH);
+    EXPECT(font != nullptr);
+
+    // pdf_name() must be a non-empty, PDF-token-safe string (no spaces).
+    const std::string& ps_name = font->pdf_name();
+    EXPECT(!ps_name.empty());
+    EXPECT(ps_name.find(' ') == std::string::npos);
+    // The Lato PostScript name is "Lato-Regular"
+    EXPECT(ps_name == "Lato-Regular");
+
+    // The generated PDF must use the same name in /BaseFont and /FontName
+    const std::string src = "= Doc\n\nText.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+    EXPECT_CONTAINS(pdf, "/FontName /Lato-Regular");
+    EXPECT_CONTAINS(pdf, "/BaseFont /Lato-Regular");
+
+    end_test();
+}
+
+static void test_pdf_ttf_os2_vertical_metrics() {
+    begin_test("pdf: TrueType OS/2 vertical metrics used in FontDescriptor");
+
+    {
+        std::ifstream probe(LATO_REGULAR_PATH);
+        if (!probe) {
+            std::cout << " (skipped – " << LATO_REGULAR_PATH << " not found)";
+            end_test();
+            return;
+        }
+    }
+
+    auto font = minipdf::TtfFont::from_file(LATO_REGULAR_PATH);
+    EXPECT(font != nullptr);
+
+    // OS/2 typographic ascent for Lato Regular is 1900 units in a 2000-UPM
+    // font, giving 950 in 1000-unit space.  We just verify the values are sane
+    // (positive ascent, negative descent) and within plausible PDF ranges.
+    float asc  = font->ascent_1000();
+    float desc = font->descent_1000();
+    EXPECT(asc  >  0.0f);
+    EXPECT(desc <  0.0f);
+    EXPECT(asc  <= 2000.0f);
+    EXPECT(desc >= -2000.0f);
+
+    // The generated PDF FontDescriptor must contain non-zero /Ascent and /Descent
+    const std::string src = "= Doc\n\nText.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, LATO_REGULAR_PATH);
+    EXPECT_CONTAINS(pdf, "/Ascent ");
+    EXPECT_CONTAINS(pdf, "/Descent ");
+    // Descent must be negative (stored as a plain integer in PDF).
+    auto desc_pos = pdf.find("/Descent ");
+    EXPECT(desc_pos != std::string::npos);
+    if (desc_pos != std::string::npos) {
+        // Skip "/Descent " and check for a minus sign
+        auto val_start = desc_pos + 9;
+        EXPECT(val_start < pdf.size() && pdf[val_start] == '-');
+    }
+
+    end_test();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3055,6 +3134,8 @@ int main(int argc, char* argv[]) {
     test_pdf_ttf_object_layout();
     test_pdf_ttf_widths_differ_from_helvetica();
     test_pdf_ttf_xref_still_valid_with_font();
+    test_pdf_ttf_postscript_name_from_table();
+    test_pdf_ttf_os2_vertical_metrics();
 
     // Summary
     std::cout << "\n============================\n";

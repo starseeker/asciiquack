@@ -235,11 +235,18 @@ private:
         // stt_ScaleForMappingEmToPixels(info, 1000) = 1000 / units_per_em
         scale_ = stt_ScaleForMappingEmToPixels(&info_, 1000.0f);
 
-        // Vertical metrics
-        int asc = 0, desc = 0, lgap = 0;
-        stt_GetFontVMetrics(&info_, &asc, &desc, &lgap);
-        ascent_  = static_cast<float>(asc)  * scale_;
-        descent_ = static_cast<float>(desc) * scale_;
+        // Vertical metrics: prefer OS/2 typographic values (more accurate for
+        // PDF FontDescriptor /Ascent and /Descent) over hhea table values.
+        int typo_asc = 0, typo_desc = 0, typo_lgap = 0;
+        if (stt_GetFontVMetricsOS2(&info_, &typo_asc, &typo_desc, &typo_lgap)) {
+            ascent_  = static_cast<float>(typo_asc)  * scale_;
+            descent_ = static_cast<float>(typo_desc) * scale_;
+        } else {
+            int asc = 0, desc = 0, lgap = 0;
+            stt_GetFontVMetrics(&info_, &asc, &desc, &lgap);
+            ascent_  = static_cast<float>(asc)  * scale_;
+            descent_ = static_cast<float>(desc) * scale_;
+        }
 
         // Cap height: use the top of the 'H' bounding box as an approximation.
         int hx0 = 0, hy0 = 0, hx1 = 0, hy1 = 0;
@@ -257,8 +264,45 @@ private:
         bbox_x1_ = static_cast<int>(static_cast<float>(fx1) * scale_);
         bbox_y1_ = static_cast<int>(static_cast<float>(fy1) * scale_);
 
-        // Build PDF-safe font name
-        pdf_name_ = name;
+        // PostScript name (nameID=6): try Mac Roman first (platform 1, encoding 0,
+        // language 0) since it is ASCII-compatible and the most portable form.
+        // Fall back to Microsoft Unicode (platform 3, encoding 1) if not present,
+        // filtering to ASCII-printable characters only.
+        // If neither yields a usable name, derive one from the filename stem.
+        bool got_ps_name = false;
+
+        int ps_len = 0;
+        const char* ps_raw = stt_GetFontNameString(
+            &info_, &ps_len,
+            STT_PLATFORM_ID_MAC, STT_MAC_EID_ROMAN, STT_MAC_LANG_ENGLISH, 6);
+        if (ps_raw && ps_len > 0) {
+            pdf_name_.assign(ps_raw, static_cast<std::size_t>(ps_len));
+            got_ps_name = true;
+        } else {
+            // Windows platform stores strings as big-endian UTF-16; extract the
+            // ASCII bytes (every other byte, starting at offset 1).
+            const char* ms_raw = stt_GetFontNameString(
+                &info_, &ps_len,
+                STT_PLATFORM_ID_MICROSOFT, STT_MS_EID_UNICODE_BMP,
+                STT_MS_LANG_ENGLISH, 6);
+            if (ms_raw && ps_len > 1) {
+                for (int i = 1; i < ps_len; i += 2) {
+                    unsigned char hi = static_cast<unsigned char>(ms_raw[i - 1]);
+                    unsigned char lo = static_cast<unsigned char>(ms_raw[i]);
+                    if (hi == 0 && lo >= 0x20 && lo < 0x80) {
+                        pdf_name_ += static_cast<char>(lo);
+                        got_ps_name = true;
+                    }
+                }
+            }
+        }
+
+        if (!got_ps_name || pdf_name_.empty()) {
+            // Final fallback: use the filename stem passed in.
+            pdf_name_ = name;
+        }
+
+        // Sanitize: PDF name tokens must not contain spaces or special chars.
         for (char& c : pdf_name_) {
             if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
                 c = '-';
