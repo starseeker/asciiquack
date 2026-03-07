@@ -478,7 +478,11 @@ public:
                                minipdf::FontStyle::Mono, CODE_SIZE, line);
             cursor_y_ -= lh;
         }
-        cursor_y_ -= CODE_SIZE * 0.5f;
+        // Gap below the code block must be large enough that the ascenders of
+        // the following paragraph (≈ BODY_SIZE × 0.75) do not reach up into the
+        // grey background rectangle.  The minimum required is ~8.9 pt; use
+        // BODY_SIZE (11 pt) for a comfortable, visually consistent separation.
+        cursor_y_ -= BODY_SIZE;
     }
 
     // ── Horizontal rule ───────────────────────────────────────────────────────

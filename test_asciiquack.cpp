@@ -3438,6 +3438,85 @@ static void test_pdf_heading_rule_position_below_heading() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PDF code-block layout tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Return the bottom y-coordinate (in PDF points) of the first grey
+/// code-block background rectangle in the content stream.  The grey fill is
+/// identified by the "0.95 0.95 0.95 rg" colour command emitted by fill_rect.
+/// Returns -1.0f when not found.
+static float pdf_code_bg_bottom_y(const std::string& pdf) {
+    const std::string marker = "0.95 0.95 0.95 rg\n";
+    auto gpos = pdf.find(marker);
+    if (gpos == std::string::npos) return -1.0f;
+    // fill_rect emits: "<r> <g> <b> rg\n<x> <y> <w> <h> re f\n"
+    // so the line immediately following the rg line holds the rectangle.
+    auto line_start = gpos + marker.size();
+    auto line_end   = pdf.find('\n', line_start);
+    if (line_end == std::string::npos) return -1.0f;
+    std::istringstream iss(pdf.substr(line_start, line_end - line_start));
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    if (iss >> x >> y >> w >> h) return y;
+    return -1.0f;
+}
+
+/// Return the y-coordinate from the "1 0 0 1 x y Tm" command that precedes
+/// the first occurrence of "(needle) Tj" in the content stream.
+/// Returns -1.0f when not found.
+static float pdf_tm_y_of_text(const std::string& pdf,
+                               const std::string& needle) {
+    std::string pat = "(" + needle + ") Tj";
+    auto tpos = pdf.find(pat);
+    if (tpos == std::string::npos) return -1.0f;
+    // Search backward for the "1 0 0 1 " Tm prefix.
+    auto tm = pdf.rfind("1 0 0 1 ", tpos);
+    if (tm == std::string::npos) return -1.0f;
+    std::istringstream iss(pdf.substr(tm + 8, 64));
+    float x = 0.0f, y = 0.0f;
+    if (iss >> x >> y) return y;
+    return -1.0f;
+}
+
+static void test_pdf_code_block_gap_clears_background() {
+    begin_test("pdf: paragraph after code block starts below grey background");
+
+    // A two-line code block immediately followed by a paragraph.
+    // The grey rectangle must not overlap the following body text.
+    const std::string src =
+        "= Title\n"
+        "\n"
+        "----\n"
+        "code line 1\n"
+        "code line 2\n"
+        "----\n"
+        "\n"
+        "AfterBlock text here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "AfterBlock");
+
+    // Extract the bottom y-coordinate of the grey code block background and
+    // the baseline y-coordinate of the first word of the following paragraph.
+    float bg_bottom = pdf_code_bg_bottom_y(pdf);
+    float para_y    = pdf_tm_y_of_text(pdf, "AfterBlock");
+
+    EXPECT(bg_bottom > 0.0f);   // sanity: found the grey rect
+    EXPECT(para_y    > 0.0f);   // sanity: found the paragraph text
+
+    // The paragraph baseline must be below the background rectangle by at
+    // least BODY_SIZE * 0.75 ≈ 8.25 pt so that the tallest ascenders do not
+    // reach into the grey box.  We use 8.0 pt as the threshold to give a
+    // small tolerance for rounding.
+    EXPECT(bg_bottom - para_y > 8.0f);
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PDF image rendering tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3937,6 +4016,7 @@ int main(int argc, char* argv[]) {
     test_pdf_fontset_xref_valid_six_fonts();
     test_pdf_heading_rule_not_through_body();
     test_pdf_heading_rule_position_below_heading();
+    test_pdf_code_block_gap_clears_background();
     test_pdf_image_missing_file_emits_placeholder();
     test_pdf_image_xobject_structure();
     test_pdf_image_xobject_xref_valid();
