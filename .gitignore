@@ -1,0 +1,25 @@
+# Ruby build artifacts
+*.gem
+.bundle/
+Gemfile.lock
+
+# Ruby coverage
+coverage/
+
+# C++ build artifacts
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+*.make
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+asciiquack

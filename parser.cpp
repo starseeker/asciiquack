@@ -1,0 +1,1271 @@
+/// @file parser.cpp
+/// @brief AsciiDoc parser – implementation.
+///
+/// Design notes
+/// ─────────────
+/// * Line-by-line single-pass: the parser reads one line at a time, using
+///   peek_line() to look ahead without consuming.
+/// * Attribute entries may appear anywhere in the document body, not just the
+///   header; they are applied to the Document immediately when encountered.
+/// * Delimited blocks (----  ....  ====  ____  ****  ++++  --) are consumed
+///   by reading until the matching close delimiter.
+/// * Sections are detected by counting leading '=' characters.
+/// * Block-attribute lines ([source,java], .Title, [[anchor]]) accumulate in
+///   a temporary map and are applied to the next non-attribute block.
+
+#include "parser.hpp"
+#include "substitutors.hpp"
+
+#include <algorithm>
+#include <cassert>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
+
+namespace asciiquack {
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Internal helpers  (anonymous namespace)
+// ═════════════════════════════════════════════════════════════════════════════
+namespace {
+
+/// Return true if @p line is empty or consists solely of whitespace.
+bool is_blank(std::string_view line) noexcept {
+    return line.find_first_not_of(" \t") == std::string_view::npos;
+}
+
+/// Return true if @p line is a line comment (// …) but not a block comment (////).
+bool is_line_comment(std::string_view line) noexcept {
+    return line.size() >= 2 && line[0] == '/' && line[1] == '/' &&
+           (line.size() == 2 || line[2] != '/');
+}
+
+/// Trim leading and trailing ASCII whitespace from @p s in-place.
+void trim(std::string& s) {
+    // Left trim
+    auto left = s.find_first_not_of(" \t");
+    if (left == std::string::npos) { s.clear(); return; }
+    if (left > 0) { s.erase(0, left); }
+    // Right trim
+    auto right = s.find_last_not_of(" \t");
+    if (right != std::string::npos && right + 1 < s.size()) {
+        s.erase(right + 1);
+    }
+}
+
+/// Return a lower-cased copy of @p s.
+std::string to_lower(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') { c = static_cast<char>(c + ('a' - 'A')); }
+    }
+    return s;
+}
+
+// ── Delimiter recognition ─────────────────────────────────────────────────────
+
+/// Map a delimiter line to its BlockContext.
+/// Returns BlockContext::Paragraph if the line is not a known delimiter.
+struct DelimiterInfo {
+    BlockContext context;
+    ContentModel content_model;
+};
+
+std::optional<DelimiterInfo> classify_delimiter(std::string_view line) noexcept {
+    if (line == "----") return DelimiterInfo{BlockContext::Listing, ContentModel::Verbatim};
+    if (line == "....")  return DelimiterInfo{BlockContext::Literal, ContentModel::Verbatim};
+    if (line == "====") return DelimiterInfo{BlockContext::Example, ContentModel::Compound};
+    if (line == "____") return DelimiterInfo{BlockContext::Quote,   ContentModel::Compound};
+    if (line == "****") return DelimiterInfo{BlockContext::Sidebar, ContentModel::Compound};
+    if (line == "++++") return DelimiterInfo{BlockContext::Pass,    ContentModel::Raw};
+    if (line == "--")   return DelimiterInfo{BlockContext::Open,    ContentModel::Compound};
+    // Extended tildes / dashes for listing blocks
+    if (line.size() >= 4) {
+        bool all_same = true;
+        for (char c : line) { if (c != line[0]) { all_same = false; break; } }
+        if (all_same) {
+            if (line[0] == '-') return DelimiterInfo{BlockContext::Listing, ContentModel::Verbatim};
+            if (line[0] == '.') return DelimiterInfo{BlockContext::Literal, ContentModel::Verbatim};
+            if (line[0] == '=') return DelimiterInfo{BlockContext::Example, ContentModel::Compound};
+            if (line[0] == '_') return DelimiterInfo{BlockContext::Quote,   ContentModel::Compound};
+            if (line[0] == '*') return DelimiterInfo{BlockContext::Sidebar, ContentModel::Compound};
+            if (line[0] == '+') return DelimiterInfo{BlockContext::Pass,    ContentModel::Raw};
+            if (line[0] == '~') return DelimiterInfo{BlockContext::Listing, ContentModel::Verbatim};
+        }
+    }
+    return std::nullopt;
+}
+
+// ── Attribute entry parsing ────────────────────────────────────────────────────
+
+/// If @p line is an attribute entry ( :name: value ) parse it and return
+/// {name, value}.  Returns nullopt otherwise.
+std::optional<std::pair<std::string,std::string>>
+try_parse_attribute_entry(const std::string& line) {
+    // Pattern: :name: optional-value
+    //          :!name: (unset)
+    static const std::regex rx(R"(^:(!?[\w][\w\-' ]*):(?:[ \t]+(.*))?$)",
+                                std::regex::ECMAScript | std::regex::optimize);
+    std::smatch m;
+    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+
+    std::string name  = m[1].str();
+    std::string value = m[2].matched ? m[2].str() : "";
+    trim(name);
+    trim(value);
+
+    // Trailing ' \' continuation is not handled here (multi-line attributes);
+    // a single-line value is sufficient for the initial translation.
+    return std::make_pair(std::move(name), std::move(value));
+}
+
+// ── Block attribute line recognition ──────────────────────────────────────────
+
+/// Return true if @p line is a block attribute line: [...]
+bool is_block_attribute_line(std::string_view line) noexcept {
+    if (line.size() < 2) { return false; }
+    if (line.front() != '[' || line.back() != ']') { return false; }
+    // Must not look like an inline anchor [[id]]
+    if (line.size() >= 4 && line[1] == '[') { return true; }  // [[anchor]]
+    if (line[1] == ']') { return false; }  // empty: []
+    return true;
+}
+
+/// Return true if @p line is a block-title line: .Title text
+bool is_block_title_line(std::string_view line) noexcept {
+    if (line.size() < 2) { return false; }
+    if (line[0] != '.') { return false; }
+    if (line[1] == ' ' || line[1] == '.') { return false; }  // .. or ". "
+    return true;
+}
+
+/// Parse the attribute list content inside [ ... ].
+/// Returns a map of positional and named attributes.
+std::unordered_map<std::string, std::string>
+parse_attribute_list(const std::string& line) {
+    std::unordered_map<std::string, std::string> result;
+    if (line.size() < 2) { return result; }
+
+    // Strip outer [ ] (possibly [[...]])
+    std::string inner;
+    if (line.size() >= 4 && line[0] == '[' && line[1] == '[') {
+        // [[anchor,reftext]]
+        inner = line.substr(2, line.size() - 4);
+        result["anchor"] = inner;
+        return result;
+    }
+    inner = line.substr(1, line.size() - 2);
+    if (inner.empty()) { return result; }
+
+    // Split on commas (respecting quoted values)
+    std::vector<std::string> parts;
+    std::string cur;
+    bool in_quotes = false;
+    for (char c : inner) {
+        if (c == '"') {
+            in_quotes = !in_quotes;
+        } else if (c == ',' && !in_quotes) {
+            trim(cur);
+            parts.push_back(cur);
+            cur.clear();
+        } else {
+            cur += c;
+        }
+    }
+    trim(cur);
+    if (!cur.empty()) { parts.push_back(std::move(cur)); }
+
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        const std::string& p = parts[i];
+        auto eq = p.find('=');
+        if (eq != std::string::npos) {
+            std::string k = p.substr(0, eq);
+            std::string v = p.substr(eq + 1);
+            trim(k); trim(v);
+            // Strip surrounding quotes from value
+            if (v.size() >= 2 && v.front() == '"' && v.back() == '"') {
+                v = v.substr(1, v.size() - 2);
+            }
+            result[k] = std::move(v);
+        } else {
+            if (i == 0) { result["1"] = p; }
+            else        { result[std::to_string(i + 1)] = p; }
+        }
+    }
+
+    return result;
+}
+
+// ── List marker detection ──────────────────────────────────────────────────────
+
+/// Try to classify a line as a list item and return its type and marker.
+struct ListMatch {
+    ListType    type;
+    std::string marker;   ///< the leading marker characters
+    std::string text;     ///< rest of the line after the marker
+};
+
+std::optional<ListMatch> match_list_item(const std::string& line) {
+    // Unordered: optional leading whitespace, then - or * (1-5) or • (U+2022)
+    {
+        static const std::regex rx(
+            R"(^([ \t]*)(-|\*{1,5})[ \t]+(.+)$)",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::smatch m;
+        if (std::regex_match(line, m, rx)) {
+            return ListMatch{ListType::Unordered, m[2].str(), m[3].str()};
+        }
+    }
+    // Ordered: optional leading whitespace, then .{1,5} or 1. or a. or A. or i) or I)
+    {
+        static const std::regex rx(
+            R"(^([ \t]*)(\.*\.|[0-9]+\.|[a-zA-Z]\.|[IVXivx]+\))[ \t]+(.+)$)",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::smatch m;
+        if (std::regex_match(line, m, rx)) {
+            return ListMatch{ListType::Ordered, m[2].str(), m[3].str()};
+        }
+    }
+    // Description: term:: [optional text]  or  term;;
+    {
+        static const std::regex rx(
+            R"(^(?!//[^/])([ \t]*)([^ \t].+?)(:{2,4}|;;)(?:$|[ \t]+(.+)$))",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::smatch m;
+        if (std::regex_match(line, m, rx)) {
+            return ListMatch{ListType::Description, m[3].str(), m[4].matched ? m[4].str() : ""};
+        }
+    }
+    // Callout: <N> text or <.> text
+    {
+        static const std::regex rx(
+            R"(^<(\d+|\.)>[ \t]+(.+)$)",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::smatch m;
+        if (std::regex_match(line, m, rx)) {
+            return ListMatch{ListType::Callout, m[1].str(), m[2].str()};
+        }
+    }
+    return std::nullopt;
+}
+
+// ── Image macro detection ──────────────────────────────────────────────────────
+
+struct ImageMacro {
+    std::string target;
+    std::string alt;
+    std::unordered_map<std::string, std::string> attrs;
+};
+
+std::optional<ImageMacro> match_block_image(const std::string& line) {
+    static const std::regex rx(
+        R"(^image::(\S[^\[]*)\[(.*)\]$)",
+        std::regex::ECMAScript | std::regex::optimize);
+    std::smatch m;
+    if (!std::regex_match(line, m, rx)) { return std::nullopt; }
+    ImageMacro img;
+    img.target = m[1].str();
+    std::string attr_str = "[" + m[2].str() + "]";
+    img.attrs  = parse_attribute_list(attr_str);
+    img.alt    = img.attrs.count("1") ? img.attrs["1"] : img.target;
+    return img;
+}
+
+// ── Thematic break / page break detection ────────────────────────────────────
+
+bool is_thematic_break(const std::string& line) noexcept {
+    // ''' (three or more single-quotes)
+    if (line.size() >= 3) {
+        bool all_apos = true;
+        for (char c : line) { if (c != '\'') { all_apos = false; break; } }
+        if (all_apos) { return true; }
+    }
+    // Markdown-style: --- or * * * or _ _ _
+    static const std::regex rx(R"(^ {0,3}([-*_])( *)\1\2\1$)",
+                                std::regex::ECMAScript | std::regex::optimize);
+    return std::regex_match(line, rx);
+}
+
+bool is_page_break(const std::string& line) noexcept {
+    return line.size() >= 3 && line[0] == '<' && line[1] == '<' && line[2] == '<';
+}
+
+// ── Author line detection / parsing ──────────────────────────────────────────
+
+bool looks_like_author_line(const std::string& line) {
+    // Author line: FirstName [Middle] [Last] [<email>]
+    // Must start with a word char and not look like an attribute entry.
+    if (line.empty() || line[0] == ':') { return false; }
+    // Lines that end with sentence-ending punctuation are prose, not author names
+    // (e.g., "Preamble text." or "Body content.").
+    // Exception: if the line contains an email in angle brackets, it is always
+    // treated as an author line regardless of the final character.
+    const bool has_email = (line.find('<') != std::string::npos);
+    if (!has_email) {
+        char last = line.back();
+        if (last == '.' || last == '?' || last == '!' || last == ',') {
+            return false;
+        }
+    }
+    static const std::regex rx(
+        R"(^(\w[\w\-'.]*)(?: +(\w[\w\-'.]*))?(?: +(\w[\w\-'.]*))?(?: +<([^>]+)>)?$)",
+        std::regex::ECMAScript | std::regex::optimize);
+    return std::regex_match(line, rx);
+}
+
+std::vector<AuthorInfo> do_parse_author_line(const std::string& line) {
+    std::vector<AuthorInfo> authors;
+    // Split on "; "
+    std::string rest = line;
+    while (true) {
+        auto sep = rest.find("; ");
+        std::string part = (sep != std::string::npos) ? rest.substr(0, sep) : rest;
+        trim(part);
+
+        static const std::regex rx(
+            R"(^(\w[\w\-'.]*)(?: +(\w[\w\-'.]*))?(?: +(\w[\w\-'.]*))?(?: +<([^>]+)>)?$)",
+            std::regex::ECMAScript | std::regex::optimize);
+        std::smatch m;
+        if (std::regex_match(part, m, rx)) {
+            AuthorInfo a;
+            a.firstname  = m[1].str();
+            // Decide which captures are middle vs last
+            if (m[3].matched) {
+                a.middlename = m[2].str();
+                a.lastname   = m[3].str();
+            } else if (m[2].matched) {
+                a.lastname   = m[2].str();
+            }
+            if (m[4].matched) { a.email = m[4].str(); }
+            authors.push_back(std::move(a));
+        }
+
+        if (sep == std::string::npos) { break; }
+        rest = rest.substr(sep + 2);
+    }
+    return authors;
+}
+
+bool looks_like_revision_line(const std::string& line) {
+    if (line.empty()) { return false; }
+    // v1.0 or 1.0,date  or just a date
+    static const std::regex rx(
+        R"(^v?\d[\w.\-]*(?:,.*)?$|^\d{4}-\d{2}-\d{2}$)",
+        std::regex::ECMAScript | std::regex::optimize);
+    return std::regex_match(line, rx);
+}
+
+RevisionInfo do_parse_revision_line(const std::string& line) {
+    RevisionInfo rev;
+    // Optional leading 'v'
+    std::string s = line;
+    if (!s.empty() && s[0] == 'v') { s = s.substr(1); }
+
+    auto comma1 = s.find(',');
+    if (comma1 != std::string::npos) {
+        rev.number = s.substr(0, comma1);
+        trim(rev.number);
+        std::string rest = s.substr(comma1 + 1);
+        auto colon = rest.find(':');
+        if (colon != std::string::npos) {
+            rev.date   = rest.substr(0, colon);
+            rev.remark = rest.substr(colon + 1);
+            trim(rev.date);
+            trim(rev.remark);
+        } else {
+            rev.date = rest;
+            trim(rev.date);
+        }
+    } else {
+        // Could be just a version or just a date
+        static const std::regex date_rx(R"(^\d{4}-\d{2}-\d{2}$)");
+        if (std::regex_match(s, date_rx)) {
+            rev.date = s;
+        } else {
+            rev.number = s;
+        }
+    }
+    return rev;
+}
+
+// ── Admonition label detection ────────────────────────────────────────────────
+
+const char* const ADMONITION_LABELS[] = {
+    "NOTE", "TIP", "WARNING", "IMPORTANT", "CAUTION", nullptr
+};
+
+std::optional<std::string> match_admonition_label(const std::string& line) {
+    for (const char* const* lbl = ADMONITION_LABELS; *lbl; ++lbl) {
+        std::string prefix = std::string(*lbl) + ":";
+        if (line.size() > prefix.size() + 1 &&
+            line.substr(0, prefix.size()) == prefix &&
+            (line[prefix.size()] == ' ' || line[prefix.size()] == '\t')) {
+            return std::string(*lbl);
+        }
+    }
+    return std::nullopt;
+}
+
+} // anonymous namespace
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Parser public API
+// ═════════════════════════════════════════════════════════════════════════════
+
+DocumentPtr Parser::parse(Reader& reader, const ParseOptions& opts) {
+    auto doc = std::make_shared<Document>();
+
+    // Apply pre-set options
+    doc->set_safe_mode(opts.safe_mode);
+    doc->set_doctype(opts.doctype);
+    doc->set_backend(opts.backend);
+
+    // Apply pre-set attributes
+    for (const auto& [k, v] : opts.attributes) {
+        doc->set_attr(k, v);
+    }
+
+    // Parse the document header (title / author / revision + leading attrs)
+    parse_document_header(reader, *doc);
+
+    if (!opts.parse_header_only) {
+        // Parse the document body
+        parse_blocks(reader, *doc);
+    }
+
+    return doc;
+}
+
+DocumentPtr Parser::parse_string(const std::string&  content,
+                                  const ParseOptions& opts,
+                                  const std::string&  source_path) {
+    Reader reader(content, source_path);
+    return parse(reader, opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Document header
+// ─────────────────────────────────────────────────────────────────────────────
+
+void Parser::parse_document_header(Reader& reader, Document& doc) {
+    reader.skip_blank_lines();
+    if (!reader.has_more_lines()) { return; }
+
+    // ── Document title ────────────────────────────────────────────────────────
+    {
+        auto peeked = reader.peek_line();
+        if (!peeked) { return; }
+        std::string line{*peeked};
+
+        int lvl = section_level(line);
+        bool setext_title = false;
+        std::string title_line;
+
+        if (lvl == 0) {
+            // ATX-style: "= Title"
+            reader.skip_line();
+            title_line = line;
+        } else {
+            // Setext-style (two-line) title: text on line 1, ==... on line 2
+            auto next_lines = reader.peek_lines(2);
+            if (next_lines.size() >= 2) {
+                std::string second{next_lines[1]};
+                if (!second.empty() &&
+                    second.find_first_not_of('=') == std::string::npos &&
+                    second.size() >= 2) {
+                    setext_title = true;
+                    reader.skip_line();
+                    title_line = line;
+                    reader.skip_line(); // consume the == line
+                }
+            }
+        }
+
+        if (lvl == 0 || setext_title) {
+            std::string title = section_title_text(title_line);
+            doc.set_doctitle(title);
+            doc.header().has_header = true;
+
+            // Register in catalog
+            std::string id_prefix = doc.attr("idprefix", "_");
+            std::string id_sep    = doc.attr("idseparator", "_");
+            std::string doc_id    = generate_id(title, id_prefix, id_sep);
+            if (doc.id().empty()) { doc.set_id(doc_id); }
+
+            // ── Author line ───────────────────────────────────────────────────
+            reader.skip_blank_lines();
+            if (!reader.has_more_lines()) { return; }
+            {
+                auto ap = reader.peek_line();
+                if (ap) {
+                    std::string aline{*ap};
+                    if (looks_like_author_line(aline)) {
+                        reader.skip_line();
+                        auto authors = do_parse_author_line(aline);
+                        for (auto& a : authors) { doc.add_author(a); }
+
+                        // Set author-related attributes
+                        if (!authors.empty()) {
+                            const auto& a = authors[0];
+                            doc.set_attr("author",          a.fullname());
+                            doc.set_attr("authorinitials",  a.initials());
+                            doc.set_attr("firstname",       a.firstname);
+                            if (!a.middlename.empty())
+                                doc.set_attr("middlename",  a.middlename);
+                            if (!a.lastname.empty())
+                                doc.set_attr("lastname",    a.lastname);
+                            if (!a.email.empty())
+                                doc.set_attr("email",       a.email);
+
+                            // Build "authors" attribute  (all authors)
+                            std::string all_authors;
+                            for (std::size_t i = 0; i < authors.size(); ++i) {
+                                if (i > 0) { all_authors += ", "; }
+                                all_authors += authors[i].fullname();
+                            }
+                            doc.set_attr("authors", all_authors);
+                        }
+
+                        // ── Revision line ─────────────────────────────────────
+                        if (reader.has_more_lines()) {
+                            auto rp = reader.peek_line();
+                            if (rp) {
+                                std::string rline{*rp};
+                                if (looks_like_revision_line(rline)) {
+                                    reader.skip_line();
+                                    RevisionInfo rev = do_parse_revision_line(rline);
+                                    doc.set_revision(rev);
+                                    if (!rev.number.empty())
+                                        doc.set_attr("revnumber", rev.number);
+                                    if (!rev.date.empty())
+                                        doc.set_attr("revdate",   rev.date);
+                                    if (!rev.remark.empty())
+                                        doc.set_attr("revremark", rev.remark);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Leading attribute entries ─────────────────────────────────────────────
+    reader.skip_blank_lines();
+    while (reader.has_more_lines()) {
+        auto peeked = reader.peek_line();
+        if (!peeked) { break; }
+        std::string line{*peeked};
+
+        if (is_blank(line)) {
+            reader.skip_line();
+            continue;
+        }
+        if (!parse_attribute_entry(line, doc)) { break; }
+        reader.skip_line();
+    }
+}
+
+bool Parser::parse_attribute_entry(const std::string& line, Document& doc) {
+    auto result = try_parse_attribute_entry(line);
+    if (!result) { return false; }
+
+    auto& [name, value] = *result;
+    if (!name.empty() && name[0] == '!') {
+        // Unset: :!name:
+        doc.remove_attr(name.substr(1));
+    } else {
+        doc.set_attr(name, value);
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section title helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+int Parser::section_level(const std::string& line) {
+    if (line.empty() || line[0] != '=') { return -1; }
+    std::size_t i = 0;
+    while (i < line.size() && line[i] == '=') { ++i; }
+    if (i > 6) { return -1; }  // max 6 '='
+    if (i >= line.size() || (line[i] != ' ' && line[i] != '\t')) { return -1; }
+    return static_cast<int>(i) - 1;  // "=" → 0, "==" → 1, …
+}
+
+std::string Parser::section_title_text(const std::string& line) {
+    if (line.empty() || line[0] != '=') { return line; }
+    std::size_t i = 0;
+    while (i < line.size() && line[i] == '=') { ++i; }
+    // Skip whitespace after '='
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) { ++i; }
+    std::string text = line.substr(i);
+    // Strip optional trailing '== ...' markers
+    static const std::regex trailing_rx(R"([ \t]+=+\s*$)",
+                                        std::regex::ECMAScript | std::regex::optimize);
+    text = std::regex_replace(text, trailing_rx, "");
+    return text;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block-attribute accumulation
+// ─────────────────────────────────────────────────────────────────────────────
+
+void Parser::collect_block_attributes(
+        Reader& reader,
+        std::unordered_map<std::string, std::string>& pending_attrs,
+        std::string& pending_title,
+        std::string& pending_id)
+{
+    while (reader.has_more_lines()) {
+        auto peeked = reader.peek_line();
+        if (!peeked) { break; }
+        std::string line{*peeked};
+
+        if (is_blank(line)) { break; }
+
+        if (is_block_title_line(line)) {
+            reader.skip_line();
+            pending_title = line.substr(1);  // strip leading '.'
+            trim(pending_title);
+            continue;
+        }
+
+        if (is_block_attribute_line(line)) {
+            reader.skip_line();
+
+            // Detect anchor [[id]] vs attribute list [...]
+            if (line.size() >= 4 && line[1] == '[') {
+                // [[id]] or [[id,reftext]]
+                std::string inner = line.substr(2, line.size() - 4);
+                auto comma = inner.find(',');
+                if (comma != std::string::npos) {
+                    pending_id = inner.substr(0, comma);
+                    trim(pending_id);
+                    // reftext stored as title if no explicit title yet
+                    if (pending_title.empty()) {
+                        pending_title = inner.substr(comma + 1);
+                        trim(pending_title);
+                    }
+                } else {
+                    pending_id = inner;
+                    trim(pending_id);
+                }
+            } else {
+                auto attrs = parse_attribute_list(line);
+                for (auto& [k, v] : attrs) {
+                    pending_attrs[k] = v;
+                }
+            }
+            continue;
+        }
+
+        break;
+    }
+}
+
+void Parser::apply_block_attributes(
+        Block& block,
+        std::unordered_map<std::string, std::string>& pending_attrs,
+        const std::string& pending_title,
+        const std::string& pending_id)
+{
+    if (!pending_id.empty())    { block.set_id(pending_id); }
+    if (!pending_title.empty()) { block.set_title(pending_title); }
+    for (auto& [k, v] : pending_attrs) {
+        block.set_attr(k, v);
+    }
+    // style is the first positional attribute (key "1")
+    auto sit = pending_attrs.find("1");
+    if (sit != pending_attrs.end() && block.style().empty()) {
+        block.set_style(sit->second);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Body block parsing
+// ─────────────────────────────────────────────────────────────────────────────
+
+void Parser::parse_blocks(Reader& reader, Block& parent) {
+    while (reader.has_more_lines()) {
+        parse_next_block(reader, parent);
+    }
+}
+
+bool Parser::parse_next_block(Reader& reader, Block& parent) {
+    reader.skip_blank_lines();
+    if (!reader.has_more_lines()) { return false; }
+
+    // Collect block attributes and pending title / id
+    std::unordered_map<std::string, std::string> pending_attrs;
+    std::string pending_title;
+    std::string pending_id;
+    collect_block_attributes(reader, pending_attrs, pending_title, pending_id);
+
+    reader.skip_blank_lines();
+    if (!reader.has_more_lines()) { return false; }
+
+    auto peeked = reader.peek_line();
+    if (!peeked) { return false; }
+    std::string line{*peeked};
+
+    // ── Attribute entry ────────────────────────────────────────────────────────
+    {
+        Document* doc = parent.document();
+        if (doc && parse_attribute_entry(line, *doc)) {
+            reader.skip_line();
+            return true;
+        }
+    }
+
+    // ── Comment block ─────────────────────────────────────────────────────────
+    if (line == "////") {
+        reader.skip_line();
+        (void)reader.read_lines_until("////");  // consume until closing ////
+        return true;
+    }
+
+    // ── Comment line ──────────────────────────────────────────────────────────
+    if (is_line_comment(line)) {
+        reader.skip_line();
+        return true;
+    }
+
+    // ── Thematic break ────────────────────────────────────────────────────────
+    if (is_thematic_break(line)) {
+        reader.skip_line();
+        auto block = std::make_shared<Block>(BlockContext::ThematicBreak, &parent, ContentModel::Empty);
+        parent.append(block);
+        return true;
+    }
+
+    // ── Page break ────────────────────────────────────────────────────────────
+    if (is_page_break(line)) {
+        reader.skip_line();
+        auto block = std::make_shared<Block>(BlockContext::PageBreak, &parent, ContentModel::Empty);
+        parent.append(block);
+        return true;
+    }
+
+    // ── Section title ─────────────────────────────────────────────────────────
+    if (section_level(line) >= 0) {
+        auto sect = parse_section(reader, parent, line, pending_attrs);
+        if (sect) {
+            apply_block_attributes(*sect, pending_attrs, pending_title, pending_id);
+            parent.append(sect);
+        }
+        return true;
+    }
+
+    // ── Delimited block ───────────────────────────────────────────────────────
+    if (auto di = classify_delimiter(line)) {
+        reader.skip_line();  // consume opening delimiter
+
+        BlockPtr block;
+
+        // Dispatch based on context and pending style
+        auto style_it  = pending_attrs.find("1");
+        std::string style = (style_it != pending_attrs.end()) ? style_it->second : "";
+
+        switch (di->context) {
+            case BlockContext::Listing: {
+                auto b = std::make_shared<Block>(BlockContext::Listing, &parent, ContentModel::Verbatim);
+                b->set_lines(reader.read_lines_until(line));
+                // Rebuild source from lines
+                std::string src;
+                for (auto& l : b->lines()) { src += l; src += '\n'; }
+                if (!src.empty() && src.back() == '\n') { src.pop_back(); }
+                b->set_source(src);
+                block = b;
+                break;
+            }
+            case BlockContext::Literal: {
+                auto b = std::make_shared<Block>(BlockContext::Literal, &parent, ContentModel::Verbatim);
+                b->set_lines(reader.read_lines_until(line));
+                std::string src;
+                for (auto& l : b->lines()) { src += l; src += '\n'; }
+                if (!src.empty() && src.back() == '\n') { src.pop_back(); }
+                b->set_source(src);
+                block = b;
+                break;
+            }
+            case BlockContext::Example: {
+                if (to_lower(style) == "note"     || to_lower(style) == "tip" ||
+                    to_lower(style) == "warning"   || to_lower(style) == "important" ||
+                    to_lower(style) == "caution") {
+                    block = parse_admonition_block(reader, parent, pending_attrs);
+                    // Re-read until close – already done inside
+                } else {
+                    auto b = std::make_shared<Block>(BlockContext::Example, &parent, ContentModel::Compound);
+                    parse_blocks(reader, *b);  // parse until the closing delimiter
+                    // FIXME: currently parse_blocks runs to EOF; the caller
+                    // needs a terminator-aware variant. For now we rely on the
+                    // admonition / example blocks being closed by the next
+                    // matching delimiter in the outer parse_blocks call.
+                    block = b;
+                }
+                break;
+            }
+            case BlockContext::Quote: {
+                auto b = std::make_shared<Block>(
+                    (to_lower(style) == "verse") ? BlockContext::Verse : BlockContext::Quote,
+                    &parent, ContentModel::Compound);
+                // For verse, the content is verbatim
+                if (b->context() == BlockContext::Verse) {
+                    b->set_lines(reader.read_lines_until(line));
+                    std::string src;
+                    for (auto& l : b->lines()) { src += l; src += '\n'; }
+                    if (!src.empty() && src.back() == '\n') { src.pop_back(); }
+                    b->set_source(src);
+                }
+                block = b;
+                break;
+            }
+            case BlockContext::Sidebar: {
+                auto b = std::make_shared<Block>(BlockContext::Sidebar, &parent, ContentModel::Compound);
+                block = b;
+                break;
+            }
+            case BlockContext::Pass: {
+                auto b = std::make_shared<Block>(BlockContext::Pass, &parent, ContentModel::Raw);
+                b->set_lines(reader.read_lines_until(line));
+                std::string src;
+                for (auto& l : b->lines()) { src += l; src += '\n'; }
+                if (!src.empty() && src.back() == '\n') { src.pop_back(); }
+                b->set_source(src);
+                block = b;
+                break;
+            }
+            case BlockContext::Open: {
+                auto b = std::make_shared<Block>(BlockContext::Open, &parent, ContentModel::Compound);
+                block = b;
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (block) {
+            apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
+            parent.append(block);
+        }
+        return true;
+    }
+
+    // ── Table ─────────────────────────────────────────────────────────────────
+    if (line.rfind("|===", 0) == 0 || line.rfind(",===", 0) == 0) {
+        auto tbl = parse_table(reader, parent, pending_attrs);
+        if (tbl) {
+            apply_block_attributes(*tbl, pending_attrs, pending_title, pending_id);
+            parent.append(tbl);
+        }
+        return true;
+    }
+
+    // ── Block image ────────────────────────────────────────────────────────────
+    if (auto img = match_block_image(line)) {
+        reader.skip_line();
+        auto block = std::make_shared<Block>(BlockContext::Image, &parent, ContentModel::Empty);
+        block->set_attr("target", img->target);
+        block->set_attr("alt",    img->alt);
+        for (auto& [k, v] : img->attrs) { block->set_attr(k, v); }
+        apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
+        parent.append(block);
+        return true;
+    }
+
+    // ── List item ─────────────────────────────────────────────────────────────
+    if (auto lm = match_list_item(line)) {
+        auto lst = parse_list(reader, parent, lm->type, line, pending_attrs);
+        if (lst) {
+            apply_block_attributes(*lst, pending_attrs, pending_title, pending_id);
+            parent.append(lst);
+        }
+        return true;
+    }
+
+    // ── Paragraph (including admonition paragraph) ─────────────────────────────
+    {
+        auto block = parse_paragraph(reader, parent, pending_attrs);
+        if (block) {
+            apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
+            parent.append(block);
+        }
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::shared_ptr<Section> Parser::parse_section(
+        Reader& reader, Block& parent,
+        const std::string& title_line,
+        std::unordered_map<std::string, std::string>& pending_attrs)
+{
+    reader.skip_line();  // consume the title line
+
+    int level = section_level(title_line);
+    if (level < 0) { return nullptr; }
+
+    auto sect = std::make_shared<Section>(level, &parent);
+    std::string title = section_title_text(title_line);
+    sect->set_title(title);
+
+    // Generate an id from the title
+    const Document* doc = sect->document();
+    std::string id_prefix = doc ? doc->attr("idprefix", "_") : "_";
+    std::string id_sep    = doc ? doc->attr("idseparator", "_") : "_";
+    sect->set_id(generate_id(title, id_prefix, id_sep));
+
+    // Register in catalogue
+    if (doc) {
+        // doc is const, but we cast: the document owns the catalogue and this
+        // is a legitimate mutation during parsing.
+        const_cast<Document*>(doc)->register_ref(sect->id(), title);  // NOLINT
+    }
+
+    // Determine the expected child section level
+    int child_level = level + 1;
+
+    // Consume blocks up to the next section at the same or higher level
+    while (reader.has_more_lines()) {
+        auto peeked = reader.peek_line();
+        if (!peeked) { break; }
+        std::string next_line{*peeked};
+
+        if (is_blank(next_line)) { reader.skip_line(); continue; }
+
+        int next_level = section_level(next_line);
+        if (next_level >= 0 && next_level <= level) {
+            // Next section at same or higher level – stop here.
+            break;
+        }
+        if (next_level == child_level) {
+            // Nested section
+            std::unordered_map<std::string, std::string> sub_attrs;
+            auto sub = parse_section(reader, *sect, next_line, sub_attrs);
+            if (sub) { sect->append(sub); }
+        } else {
+            parse_next_block(reader, *sect);
+        }
+    }
+
+    (void)pending_attrs;  // will be applied by caller
+    return sect;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paragraph
+// ─────────────────────────────────────────────────────────────────────────────
+
+BlockPtr Parser::parse_paragraph(
+        Reader& reader, Block& parent,
+        std::unordered_map<std::string, std::string>& pending_attrs)
+{
+    (void)pending_attrs;
+
+    // Collect lines until blank / section title / delimiter / list / image
+    std::vector<std::string> lines;
+    while (reader.has_more_lines()) {
+        auto peeked = reader.peek_line();
+        if (!peeked) { break; }
+        std::string line{*peeked};
+
+        if (is_blank(line)) { break; }
+        if (is_line_comment(line)) { reader.skip_line(); break; }
+        if (section_level(line) >= 0) { break; }
+        if (classify_delimiter(line)) { break; }
+        if (match_block_image(line))  { break; }
+        if (match_list_item(line))    { break; }
+        if (line.rfind("|===", 0) == 0) { break; }
+
+        reader.skip_line();
+        lines.push_back(std::move(line));
+    }
+
+    if (lines.empty()) { return nullptr; }
+
+    // Check for admonition paragraph: "NOTE: text"
+    if (auto lbl = match_admonition_label(lines[0])) {
+        auto block = std::make_shared<Block>(BlockContext::Admonition, &parent, ContentModel::Simple);
+        block->set_attr("name", to_lower(*lbl));
+        block->set_attr("caption", *lbl);
+        // Strip the label prefix from the first line
+        std::string first = lines[0].substr(lbl->size() + 1);
+        trim(first);
+        lines[0] = first;
+
+        // Join lines
+        std::string src;
+        for (auto& l : lines) { src += l; src += ' '; }
+        if (!src.empty() && src.back() == ' ') { src.pop_back(); }
+        block->set_source(src);
+        return block;
+    }
+
+    // Check for literal paragraph (leading whitespace)
+    if (!lines[0].empty() && (lines[0][0] == ' ' || lines[0][0] == '\t')) {
+        auto block = std::make_shared<Block>(BlockContext::Literal, &parent, ContentModel::Verbatim);
+        block->set_lines(lines);
+        std::string src;
+        for (auto& l : lines) { src += l; src += '\n'; }
+        if (!src.empty() && src.back() == '\n') { src.pop_back(); }
+        block->set_source(src);
+        return block;
+    }
+
+    // Normal paragraph: join lines with a single space
+    std::string src;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (i > 0) {
+            // Preserve hard-break marker
+            if (!src.empty() && src.back() == '+') {
+                src += '\n';
+            } else {
+                src += ' ';
+            }
+        }
+        src += lines[i];
+    }
+
+    auto block = std::make_shared<Block>(BlockContext::Paragraph, &parent, ContentModel::Simple);
+    block->set_source(src);
+    return block;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admonition block
+// ─────────────────────────────────────────────────────────────────────────────
+
+BlockPtr Parser::parse_admonition_block(
+        Reader& reader, Block& parent,
+        std::unordered_map<std::string, std::string>& pending_attrs)
+{
+    auto style_it = pending_attrs.find("1");
+    std::string label = (style_it != pending_attrs.end()) ? style_it->second : "NOTE";
+
+    auto block = std::make_shared<Block>(BlockContext::Admonition, &parent, ContentModel::Compound);
+    block->set_attr("name",    to_lower(label));
+    block->set_attr("caption", label);
+
+    // The body is parsed as compound blocks until "===="
+    // (caller already consumed the opening delimiter)
+    parse_blocks(reader, *block);
+    return block;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// List
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::string Parser::list_marker(ListType lt, const std::string& line) {
+    auto lm = match_list_item(line);
+    if (lm && lm->type == lt) { return lm->marker; }
+    return "";
+}
+
+int Parser::list_marker_level(ListType lt, const std::string& marker) {
+    if (lt == ListType::Unordered) {
+        return static_cast<int>(marker.size());  // * = 1, ** = 2, …
+    }
+    if (lt == ListType::Ordered) {
+        return static_cast<int>(marker.size());  // . = 1, .. = 2, …
+    }
+    return 1;
+}
+
+std::shared_ptr<List> Parser::parse_list(
+        Reader& reader, Block& parent,
+        ListType list_type, const std::string& first_line,
+        std::unordered_map<std::string, std::string>& pending_attrs)
+{
+    (void)pending_attrs;
+
+    auto list = std::make_shared<List>(list_type, &parent);
+
+    // Determine the first marker so we can detect siblings vs sub-lists
+    auto first_match = match_list_item(first_line);
+    if (!first_match) { return nullptr; }
+    std::string root_marker = first_match->marker;
+
+    // Helper: collect lines for the item body (up to blank line or next
+    // same-level item)
+    auto collect_item = [&](const std::string& text_line) -> std::shared_ptr<ListItem> {
+        auto item = std::make_shared<ListItem>(list.get());
+        item->set_marker(root_marker);
+
+        // Source starts with the rest of the first line
+        auto lm = match_list_item(text_line);
+        if (!lm) { return nullptr; }
+
+        if (list_type == ListType::Description) {
+            item->set_term(text_line.substr(0, text_line.find(lm->marker)));
+            trim(const_cast<std::string&>(item->term()));
+        }
+
+        // Collect continuation lines
+        std::string src = lm->text;
+        // Check for list continuation (+)
+        while (reader.has_more_lines()) {
+            auto peeked = reader.peek_line();
+            if (!peeked) { break; }
+            std::string nxt{*peeked};
+            if (is_blank(nxt)) { break; }
+            // Sibling list item at the same level
+            if (auto nm = match_list_item(nxt)) {
+                if (nm->type == list_type && nm->marker == root_marker) { break; }
+            }
+            // List continuation (+ on its own line)
+            if (nxt == "+") { reader.skip_line(); continue; }
+            // Otherwise it's continuation text
+            reader.skip_line();
+            src += ' ';
+            src += nxt;
+        }
+
+        item->set_source(src);
+        return item;
+    };
+
+    // Process the first item (already peeked, now consume)
+    reader.skip_line();
+    auto first_item = collect_item(first_line);
+    if (first_item) { list->add_item(first_item); }
+
+    // Process subsequent items at the same level
+    while (reader.has_more_lines()) {
+        reader.skip_blank_lines();
+        if (!reader.has_more_lines()) { break; }
+
+        auto peeked = reader.peek_line();
+        if (!peeked) { break; }
+        std::string line{*peeked};
+
+        auto lm = match_list_item(line);
+        if (!lm) { break; }
+        if (lm->type != list_type) { break; }
+        if (lm->marker != root_marker) { break; }
+
+        reader.skip_line();
+        auto item = collect_item(line);
+        if (item) { list->add_item(item); }
+    }
+
+    return list;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Table
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::shared_ptr<Table> Parser::parse_table(
+        Reader& reader, Block& parent,
+        std::unordered_map<std::string, std::string>& pending_attrs)
+{
+    // Consume the opening |=== line
+    auto opener = reader.read_line();
+    if (!opener) { return nullptr; }
+
+    auto tbl = std::make_shared<Table>(&parent);
+
+    // Check for header option in pending_attrs
+    bool has_header = false;
+    auto opt_it = pending_attrs.find("options");
+    if (opt_it != pending_attrs.end() &&
+        opt_it->second.find("header") != std::string::npos) {
+        has_header = true;
+    }
+    // "cols" attribute for column specs
+    auto cols_it = pending_attrs.find("cols");
+    if (cols_it != pending_attrs.end()) {
+        // Simple parsing: comma-separated widths like "1,2,3" or "1*,2*"
+        std::string cols_str = cols_it->second;
+        std::istringstream ss(cols_str);
+        std::string col;
+        while (std::getline(ss, col, ',')) {
+            trim(col);
+            ColumnSpec spec;
+            // Parse width (number before optional '*' or '%')
+            try {
+                std::size_t pos = 0;
+                spec.width = std::stoi(col, &pos);
+                (void)pos;
+            } catch (...) {
+                spec.width = 1;
+            }
+            tbl->add_column_spec(spec);
+        }
+    }
+
+    // Read rows until |===
+    std::vector<std::string> raw_lines;
+    while (reader.has_more_lines()) {
+        auto ln = reader.read_line();
+        if (!ln) { break; }
+        if (*ln == "|===" || *ln == ",===") { break; }
+        raw_lines.push_back(*ln);
+    }
+
+    // Build rows by splitting on |
+    // Simple approach: each line starting with | begins a new row; cells are
+    // separated by ' |' within a line.
+    bool first_row = true;
+    for (const auto& row_line : raw_lines) {
+        if (is_blank(row_line)) {
+            // Blank line separates sections; next row starts a new section
+            first_row = false;
+            continue;
+        }
+        if (row_line.empty() || row_line[0] != '|') { continue; }
+
+        TableRow row;
+        // Split by ' |' or '|' at start
+        std::string content = row_line.substr(1);  // strip leading |
+        std::string sep = "|";
+        std::size_t pos = 0;
+        while (true) {
+            auto next_sep = content.find(sep, pos);
+            std::string cell_text;
+            if (next_sep == std::string::npos) {
+                cell_text = content.substr(pos);
+            } else {
+                cell_text = content.substr(pos, next_sep - pos);
+                pos = next_sep + sep.size();
+            }
+            trim(cell_text);
+
+            auto cell = std::make_shared<TableCell>();
+            cell->set_source(cell_text);
+            if (first_row && has_header) {
+                cell->set_cell_context(TableCellContext::Head);
+            }
+            row.add_cell(cell);
+
+            if (next_sep == std::string::npos) { break; }
+        }
+
+        if (first_row && has_header) {
+            tbl->head_rows().push_back(std::move(row));
+        } else {
+            tbl->body_rows().push_back(std::move(row));
+        }
+        first_row = false;
+    }
+
+    return tbl;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Author / revision forwarding
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::vector<AuthorInfo> Parser::parse_author_line(const std::string& line) {
+    return do_parse_author_line(line);
+}
+
+RevisionInfo Parser::parse_revision_line(const std::string& line) {
+    return do_parse_revision_line(line);
+}
+
+} // namespace asciiquack
