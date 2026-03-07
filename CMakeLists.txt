@@ -86,7 +86,30 @@ if(USE_PCRE2)
     else()
         # ── Embedded PCRE2 vendor subset: no JIT, no external dependency ─────
         # Compile the 18 minimal PCRE2 .c files as part of each target.
-        file(GLOB PCRE2_EMBED_SRCS "${CMAKE_SOURCE_DIR}/vendor/pcre2/*.c")
+        set(PCRE2_EMBED_SRCS
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_auto_possess.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_chartables.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_compile.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_context.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_error.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_find_bracket.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_jit_compile.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_maketables.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_match.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_match_data.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_newline.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_ord2utf.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_pattern_info.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_string_utils.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_study.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_substitute.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_tables.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_valid_utf.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_xclass.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_script_run.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_substring.c"
+            "${CMAKE_SOURCE_DIR}/vendor/pcre2/pcre2_ucd.c"
+        )
         list(APPEND AQREGEX_DEFS
             AQREGEX_USE_PCRE2
             PCRE2_STATIC

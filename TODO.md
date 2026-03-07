@@ -156,15 +156,25 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 | Implementation | Avg / iter | Conv / sec | Notes |
 |---|---|---|---|
 | Ruby Asciidoctor 2.1.0 (Ruby 3.2.3) | ~2.3 ms | ~440 | reference |
-| asciiquack / `std::regex` (GCC 13) | ~3.2 ms | ~310 | baseline |
-| asciiquack / PCRE2 | ~0.65 ms | ~1 530 | **~5× faster than Ruby** |
+| asciiquack / `std::regex` (GCC 13) | ~3.1 ms | ~321 | baseline |
+| asciiquack / embedded PCRE2 (no JIT) | ~0.77 ms | ~1 291 | **~4× vs std::regex** – zero external dep |
+| asciiquack / system PCRE2 (JIT) | ~0.65 ms | ~1 541 | **~4.8× vs std::regex** |
 
 ### What was done
 
 - **`std::regex` → PCRE2** – Replaced GCC's slow `std::regex` with PCRE2
-  via a thin `aqregex.hpp` adapter.  The adapter falls back to `std::regex`
-  when PCRE2 is unavailable (`-DUSE_PCRE2=OFF`).  This single change
-  accounts for almost all of the gain.
+  via a thin `aqregex.hpp` adapter.  CMake selects:
+  1. System `libpcre2-8` (JIT enabled, fastest) when `libpcre2-dev` is present.
+  2. Embedded vendor subset (`vendor/pcre2/`, no JIT) when the system library
+     is absent or when `-DUSE_SYSTEM_PCRE2=OFF` is passed — zero external
+     dependency, still ~4× faster than `std::regex`.
+  3. `std::regex` fallback via `-DUSE_PCRE2=OFF`.
+
+- **Embedded PCRE2 subset** – `vendor/pcre2/` contains 22 source files
+  (~30 000 lines) from PCRE2 10.42, compiled without JIT, without Unicode
+  property tables (`\p{}`), without DFA, without tools.  The non-Unicode
+  stubs in `pcre2_ucd.c` satisfy any `\w` / `\s` / `\d` reference via
+  the portable character tables in `pcre2_chartables.c`.
 
 - **`OutputBuffer` instead of `std::ostringstream`** – The HTML5, DocBook5,
   and man-page converters now use a pre-reserved `std::string` sink
