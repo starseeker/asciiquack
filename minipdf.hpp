@@ -39,6 +39,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <array>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -511,44 +512,88 @@ public:
     [[nodiscard]] float page_height() const { return ph_; }
     [[nodiscard]] std::size_t page_count() const { return pages_.size(); }
 
-    /// Attach an optional TrueType body font.  When set, F1 (regular text)
-    /// becomes an embedded TrueType font instead of the base-14 Helvetica.
-    void set_body_font(std::shared_ptr<TtfFont> font) { body_font_ = std::move(font); }
-    [[nodiscard]] const std::shared_ptr<TtfFont>& body_font() const { return body_font_; }
+    /// Attach an optional TrueType font for the given style slot.
+    /// When set, the corresponding F1–F6 resource becomes an embedded TrueType
+    /// font instead of the PDF base-14 fallback.
+    void set_font(FontStyle style, std::shared_ptr<TtfFont> font) {
+        auto idx = static_cast<std::size_t>(style);
+        if (idx < fonts_.size()) { fonts_[idx] = std::move(font); }
+    }
+
+    /// Return the TrueType font for the given style (may be nullptr).
+    [[nodiscard]] const std::shared_ptr<TtfFont>& get_font(FontStyle style) const {
+        auto idx = static_cast<std::size_t>(style);
+        if (idx < fonts_.size()) { return fonts_[idx]; }
+        static const std::shared_ptr<TtfFont> null_font;
+        return null_font;
+    }
+
+    /// Backward-compatible helper: attach a TrueType font for regular body text
+    /// (FontStyle::Regular / F1).  Equivalent to set_font(FontStyle::Regular, …).
+    void set_body_font(std::shared_ptr<TtfFont> font) {
+        set_font(FontStyle::Regular, std::move(font));
+    }
+    [[nodiscard]] const std::shared_ptr<TtfFont>& body_font() const {
+        return get_font(FontStyle::Regular);
+    }
 
     // ── PDF serialisation ─────────────────────────────────────────────────────
 
     /// Serialise the document to a PDF byte string.
     ///
-    /// Object ID layout when body_font_ is **not** set (default, base-14 only):
+    /// Object ID layout (base-14 only, no embedded fonts):
     ///   1   Catalog
     ///   2   Pages tree
-    ///   3–8 F1–F6 font dicts (Helvetica … Courier-Bold, /Type1 base-14)
+    ///   3–8 F1–F6 font dicts
     ///   9+  (content, page) pairs
     ///
-    /// Object ID layout when body_font_ **is** set (TrueType body font):
-    ///   1   Catalog
-    ///   2   Pages tree
-    ///   3   TrueType font data stream (/FontFile2)
-    ///   4   FontDescriptor
-    ///   5   F1 font dict (/TrueType, references 3 and 4)
-    ///   6–10 F2–F6 font dicts (Helvetica-Bold … Courier-Bold, /Type1 base-14)
-    ///   11+ (content, page) pairs
+    /// Object ID layout with N embedded TrueType fonts
+    /// (one stream + descriptor pair per style that has a custom font,
+    /// emitted in FontStyle enum order before the font dicts):
+    ///   1            Catalog
+    ///   2            Pages tree
+    ///   3, 4         stream + FontDescriptor for the first embedded style
+    ///   5, 6         stream + FontDescriptor for the second embedded style
+    ///   …            (2 objects per additional embedded style)
+    ///   3+2*N … 8+2*N  F1–F6 font dicts
+    ///   9+2*N+        (content, page) pairs
+    ///
+    /// Backward-compatible: with only FontStyle::Regular (F1) embedded the
+    /// layout is identical to the previous single-body-font layout.
     [[nodiscard]] std::string to_string() const {
-        const bool has_ttf = body_font_ != nullptr;
+        // ── Determine which styles have embedded TrueType fonts ───────────────
+        constexpr int N_FONTS = 6;
+        static const FontStyle FONT_STYLE_ORDER[N_FONTS] = {
+            FontStyle::Regular, FontStyle::Bold, FontStyle::Oblique,
+            FontStyle::BoldOblique, FontStyle::Mono, FontStyle::MonoBold
+        };
 
-        // Object ID assignment
-        const int TTF_DATA_ID  = has_ttf ? 3 : 0;   // font data stream
-        const int TTF_FD_ID    = has_ttf ? 4 : 0;   // FontDescriptor
-        const int FONT_BASE_ID = has_ttf ? 5 : 3;   // first font dict (F1)
-        constexpr int N_FONTS  = 6;
-        const int BODY_BASE_ID = FONT_BASE_ID + N_FONTS;  // first page pair
+        // ttf_slot[i]: if non-negative, the object ID of the data stream for
+        // FONT_STYLE_ORDER[i].  -1 means use a base-14 Type1 font.
+        int stream_id[N_FONTS] = {-1, -1, -1, -1, -1, -1};
+        int desc_id  [N_FONTS] = {-1, -1, -1, -1, -1, -1};
+        int next_obj = 3;
+        int n_ttf    = 0;
+        for (int i = 0; i < N_FONTS; ++i) {
+            if (fonts_[static_cast<std::size_t>(i)]) {
+                stream_id[i] = next_obj;
+                desc_id  [i] = next_obj + 1;
+                next_obj += 2;
+                ++n_ttf;
+            }
+        }
+
+        const int FONT_BASE_ID = next_obj;               // first font dict object
+        const int BODY_BASE_ID = FONT_BASE_ID + N_FONTS; // first page-pair object
 
         const int n_pages    = static_cast<int>(pages_.size());
         const int total_objs = BODY_BASE_ID + n_pages * 2;
 
-        const std::size_t ttf_reserve =
-            has_ttf ? body_font_->raw_bytes().size() : 0;
+        // Reserve enough space: header + all font data + page content.
+        std::size_t ttf_reserve = 0;
+        for (const auto& f : fonts_) {
+            if (f) { ttf_reserve += f->raw_bytes().size(); }
+        }
         std::string buf;
         buf.reserve(64 * 1024 + ttf_reserve);
 
@@ -576,66 +621,65 @@ public:
                    + " /Count " + std::to_string(n_pages) + " >>\nendobj\n";
         }
 
-        // ── Objects 3 & 4: TrueType font stream + FontDescriptor (optional) ───
-        if (has_ttf) {
-            const auto& ttf_bytes = body_font_->raw_bytes();
+        // ── TrueType font data streams and FontDescriptors ────────────────────
+        for (int i = 0; i < N_FONTS; ++i) {
+            if (stream_id[i] < 0) { continue; }
+            const auto& ttf      = fonts_[static_cast<std::size_t>(i)];
+            const auto& ttf_bytes = ttf->raw_bytes();
             const auto  ttf_len   = ttf_bytes.size();
 
-            // Object 3: Font data stream
-            offsets[static_cast<std::size_t>(TTF_DATA_ID)] = buf.size();
-            buf += std::to_string(TTF_DATA_ID) + " 0 obj\n"
+            // Font data stream
+            offsets[static_cast<std::size_t>(stream_id[i])] = buf.size();
+            buf += std::to_string(stream_id[i]) + " 0 obj\n"
                    "<< /Length "  + std::to_string(ttf_len)
                    + " /Length1 " + std::to_string(ttf_len) + " >>\nstream\n";
             buf.append(reinterpret_cast<const char*>(ttf_bytes.data()), ttf_len);
             buf += "\nendstream\nendobj\n";
 
-            // Object 4: FontDescriptor
-            offsets[static_cast<std::size_t>(TTF_FD_ID)] = buf.size();
-            buf += std::to_string(TTF_FD_ID) + " 0 obj\n"
+            // FontDescriptor
+            offsets[static_cast<std::size_t>(desc_id[i])] = buf.size();
+            buf += std::to_string(desc_id[i]) + " 0 obj\n"
                    "<< /Type /FontDescriptor\n"
-                   "   /FontName /" + body_font_->pdf_name() + "\n"
+                   "   /FontName /" + ttf->pdf_name() + "\n"
                    "   /Flags 32\n"
                    "   /FontBBox ["
-                   + std::to_string(body_font_->bbox_x0()) + " "
-                   + std::to_string(body_font_->bbox_y0()) + " "
-                   + std::to_string(body_font_->bbox_x1()) + " "
-                   + std::to_string(body_font_->bbox_y1()) + "]\n"
+                   + std::to_string(ttf->bbox_x0()) + " "
+                   + std::to_string(ttf->bbox_y0()) + " "
+                   + std::to_string(ttf->bbox_x1()) + " "
+                   + std::to_string(ttf->bbox_y1()) + "]\n"
                    "   /ItalicAngle 0\n"
-                   "   /Ascent "    + std::to_string(static_cast<int>(body_font_->ascent_1000()))    + "\n"
-                   "   /Descent "   + std::to_string(static_cast<int>(body_font_->descent_1000()))   + "\n"
-                   "   /CapHeight " + std::to_string(static_cast<int>(body_font_->cap_height_1000())) + "\n"
+                   "   /Ascent "    + std::to_string(static_cast<int>(ttf->ascent_1000()))     + "\n"
+                   "   /Descent "   + std::to_string(static_cast<int>(ttf->descent_1000()))    + "\n"
+                   "   /CapHeight " + std::to_string(static_cast<int>(ttf->cap_height_1000())) + "\n"
                    "   /StemV 80\n"
-                   "   /FontFile2 " + std::to_string(TTF_DATA_ID) + " 0 R\n"
+                   "   /FontFile2 " + std::to_string(stream_id[i]) + " 0 R\n"
                    ">>\nendobj\n";
         }
 
         // ── Font objects F1–F6 ────────────────────────────────────────────────
-        static const FontStyle FONT_STYLE_ORDER[N_FONTS] = {
-            FontStyle::Regular, FontStyle::Bold, FontStyle::Oblique,
-            FontStyle::BoldOblique, FontStyle::Mono, FontStyle::MonoBold
-        };
         for (int i = 0; i < N_FONTS; ++i) {
             int fid = FONT_BASE_ID + i;
             offsets[static_cast<std::size_t>(fid)] = buf.size();
 
-            if (i == 0 && has_ttf) {
-                // F1 = embedded TrueType; build /Widths array for chars 32–255
+            if (stream_id[i] >= 0) {
+                // Embedded TrueType: build /Widths array for chars 32–255
+                const auto& ttf = fonts_[static_cast<std::size_t>(i)];
                 std::string widths = "[";
                 for (int ch = 32; ch <= 255; ++ch) {
                     if (ch > 32) { widths += ' '; }
                     widths += std::to_string(
-                        static_cast<int>(body_font_->advance_1000(ch)));
+                        static_cast<int>(ttf->advance_1000(ch)));
                 }
                 widths += "]";
 
                 buf += std::to_string(fid) + " 0 obj\n"
                        "<< /Type /Font\n"
                        "   /Subtype /TrueType\n"
-                       "   /BaseFont /" + body_font_->pdf_name() + "\n"
+                       "   /BaseFont /" + ttf->pdf_name() + "\n"
                        "   /FirstChar 32\n"
                        "   /LastChar 255\n"
                        "   /Widths " + widths + "\n"
-                       "   /FontDescriptor " + std::to_string(TTF_FD_ID) + " 0 R\n"
+                       "   /FontDescriptor " + std::to_string(desc_id[i]) + " 0 R\n"
                        "   /Encoding /WinAnsiEncoding\n"
                        ">>\nendobj\n";
             } else {
@@ -705,10 +749,12 @@ public:
     }
 
 private:
-    float                    pw_;         ///< page width  (pts)
-    float                    ph_;         ///< page height (pts)
-    std::vector<Page>        pages_;
-    std::shared_ptr<TtfFont> body_font_;  ///< optional embedded TrueType body font
+    float             pw_;    ///< page width  (pts)
+    float             ph_;    ///< page height (pts)
+    std::vector<Page> pages_;
+    /// Optional embedded TrueType fonts, one per FontStyle (indexed by enum value).
+    /// nullptr means use the PDF base-14 fallback for that style.
+    std::array<std::shared_ptr<TtfFont>, 6> fonts_{};
 };
 
 } // namespace minipdf

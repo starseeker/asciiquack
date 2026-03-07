@@ -3014,6 +3014,315 @@ static void test_pdf_ttf_os2_vertical_metrics() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Noto / multi-font tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#ifdef ASCIIQUACK_NOTO_FONTS_DIR
+static const std::string NOTO_DIR = ASCIIQUACK_NOTO_FONTS_DIR;
+static const std::string NOTO_REGULAR     = NOTO_DIR + "/Noto_Sans/static/NotoSans-Regular.ttf";
+static const std::string NOTO_BOLD        = NOTO_DIR + "/Noto_Sans/static/NotoSans-Bold.ttf";
+static const std::string NOTO_ITALIC      = NOTO_DIR + "/Noto_Sans/static/NotoSans-Italic.ttf";
+static const std::string NOTO_BOLD_ITALIC = NOTO_DIR + "/Noto_Sans/static/NotoSans-BoldItalic.ttf";
+static const std::string NOTO_MONO        = NOTO_DIR + "/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf";
+static const std::string NOTO_MONO_BOLD   = NOTO_DIR + "/Noto_Sans_Mono/static/NotoSansMono-Bold.ttf";
+#endif
+
+static void test_pdf_fontset_regular_only() {
+    begin_test("pdf: FontSet with regular-only path embeds one TrueType (F1)");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_REGULAR);
+        if (!probe) {
+            std::cout << " (skipped – Noto fonts not found at " << NOTO_REGULAR << ")";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= Title\n\nBody text with *bold* and _italic_.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    asciiquack::FontSet fs;
+    fs.regular = NOTO_REGULAR;
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Exactly one TrueType embedding (F1 only).
+    // Count occurrences of /Subtype /TrueType
+    std::size_t ttf_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("/Subtype /TrueType", pos)) != std::string::npos) {
+        ++ttf_count;
+        ++pos;
+    }
+    EXPECT(ttf_count == 1);
+
+    // F2 (bold) and F5 (mono) still use base-14.
+    EXPECT_CONTAINS(pdf, "Helvetica-Bold");
+    EXPECT_CONTAINS(pdf, "Courier");
+
+    end_test();
+#endif
+}
+
+static void test_pdf_fontset_all_six_styles() {
+    begin_test("pdf: FontSet with all six styles embeds six TrueType fonts");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_REGULAR);
+        if (!probe) {
+            std::cout << " (skipped – Noto fonts not found at " << NOTO_REGULAR << ")";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src =
+        "= Title\n\nBody text.\n\n*Bold text.* _Italic text._ `Monospace text.`\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    asciiquack::FontSet fs;
+    fs.regular     = NOTO_REGULAR;
+    fs.bold        = NOTO_BOLD;
+    fs.italic      = NOTO_ITALIC;
+    fs.bold_italic = NOTO_BOLD_ITALIC;
+    fs.mono        = NOTO_MONO;
+    fs.mono_bold   = NOTO_MONO_BOLD;
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // All six slots should be TrueType.
+    std::size_t ttf_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("/Subtype /TrueType", pos)) != std::string::npos) {
+        ++ttf_count;
+        ++pos;
+    }
+    EXPECT(ttf_count == 6);
+
+    // No base-14 Helvetica or Courier references (all overridden by Noto).
+    EXPECT(pdf.find("Helvetica") == std::string::npos);
+    EXPECT(pdf.find("Courier")   == std::string::npos);
+
+    // Six font data streams and six FontDescriptors embedded.
+    std::size_t fd_count = 0;
+    pos = 0;
+    while ((pos = pdf.find("/Type /FontDescriptor", pos)) != std::string::npos) {
+        ++fd_count;
+        ++pos;
+    }
+    EXPECT(fd_count == 6);
+
+    end_test();
+#endif
+}
+
+static void test_pdf_fontset_object_layout_two_ttf() {
+    begin_test("pdf: FontSet with Regular+Bold has correct two-TTF object layout");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_REGULAR);
+        if (!probe) {
+            std::cout << " (skipped – Noto fonts not found at " << NOTO_REGULAR << ")";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= Title\n\n*Bold.* Normal.\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    asciiquack::FontSet fs;
+    fs.regular = NOTO_REGULAR;
+    fs.bold    = NOTO_BOLD;
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // With two embedded TTF fonts:
+    //   3 = stream (Regular), 4 = descriptor (Regular)
+    //   5 = stream (Bold),    6 = descriptor (Bold)
+    //   7 = F1 font dict (TrueType), 8 = F2 font dict (TrueType)
+    //   9-11 = F3-F5 base-14, 12 = F6 base-14, 13+ = pages
+    EXPECT_CONTAINS(pdf, "7 0 obj\n<< /Type /Font\n   /Subtype /TrueType");
+    EXPECT_CONTAINS(pdf, "8 0 obj\n<< /Type /Font\n   /Subtype /TrueType");
+
+    // F3 should be a base-14 (no custom italic).
+    EXPECT_CONTAINS(pdf, "Helvetica-Oblique");
+
+    // Exactly two font data streams.
+    std::size_t ttf_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("/Subtype /TrueType", pos)) != std::string::npos) {
+        ++ttf_count;
+        ++pos;
+    }
+    EXPECT(ttf_count == 2);
+
+    end_test();
+#endif
+}
+
+static void test_pdf_fontset_mono_custom() {
+    begin_test("pdf: FontSet with custom mono embeds TrueType for F5");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_MONO);
+        if (!probe) {
+            std::cout << " (skipped – Noto Mono font not found at " << NOTO_MONO << ")";
+            end_test();
+            return;
+        }
+    }
+
+    const std::string src = "= Title\n\n----\nsome code\n----\n";
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    asciiquack::FontSet fs;
+    fs.mono = NOTO_MONO;
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // One TrueType embedding (F5 only).
+    std::size_t ttf_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("/Subtype /TrueType", pos)) != std::string::npos) {
+        ++ttf_count;
+        ++pos;
+    }
+    EXPECT(ttf_count == 1);
+
+    // F1 (regular) is still base-14 Helvetica.
+    EXPECT_CONTAINS(pdf, "Helvetica");
+    // Courier-Bold (F6 MonoBold) is still base-14 since we didn't set mono_bold,
+    // but NotoSansMono replaced plain Courier (F5).
+    EXPECT(pdf.find("Courier-Bold") != std::string::npos);
+    // The NotoSansMono PostScript name should appear instead of "Courier" for F5.
+    auto noto_mono_font = minipdf::TtfFont::from_file(NOTO_MONO);
+    if (noto_mono_font) {
+        EXPECT_CONTAINS(pdf, noto_mono_font->pdf_name());
+    }
+
+    end_test();
+#endif
+}
+
+static void test_pdf_fontset_noto_metrics_differ_from_helvetica() {
+    begin_test("pdf: Noto Sans has different character widths than Helvetica");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_REGULAR);
+        if (!probe) {
+            std::cout << " (skipped – Noto fonts not found at " << NOTO_REGULAR << ")";
+            end_test();
+            return;
+        }
+    }
+
+    auto noto = minipdf::TtfFont::from_file(NOTO_REGULAR);
+    EXPECT(noto != nullptr);
+    if (!noto) { end_test(); return; }
+
+    // The width of 'W' in 1000-unit EM space should be non-zero and differ
+    // from Helvetica's hard-coded value (722 units).
+    float noto_w = noto->advance_1000(static_cast<int>('W'));
+    EXPECT(noto_w > 0.0f);
+
+    float helv_w = minipdf::char_width_units('W', minipdf::FontStyle::Regular);
+    EXPECT(noto_w != helv_w);
+
+    // Vertical metrics should be sane.
+    EXPECT(noto->ascent_1000()  > 0.0f);
+    EXPECT(noto->descent_1000() < 0.0f);
+
+    end_test();
+#endif
+}
+
+static void test_pdf_fontset_xref_valid_six_fonts() {
+    begin_test("pdf: xref table is valid with all six custom fonts embedded");
+
+#ifndef ASCIIQUACK_NOTO_FONTS_DIR
+    std::cout << " (skipped – ASCIIQUACK_NOTO_FONTS_DIR not defined)";
+    end_test();
+    return;
+#else
+    {
+        std::ifstream probe(NOTO_REGULAR);
+        if (!probe) {
+            std::cout << " (skipped – Noto fonts not found at " << NOTO_REGULAR << ")";
+            end_test();
+            return;
+        }
+    }
+
+    // Multi-page document exercises the page-pair object numbering
+    // when all 6 font slots are occupied by embedded TrueType fonts.
+    std::string src = "= Big Doc\n\n";
+    for (int i = 0; i < 50; ++i) {
+        src += "Paragraph number " + std::to_string(i + 1) +
+               " with some filler text to push content across pages.\n\n";
+    }
+    auto doc = asciiquack::Parser::parse_string(src);
+
+    asciiquack::FontSet fs;
+    fs.regular     = NOTO_REGULAR;
+    fs.bold        = NOTO_BOLD;
+    fs.italic      = NOTO_ITALIC;
+    fs.bold_italic = NOTO_BOLD_ITALIC;
+    fs.mono        = NOTO_MONO;
+    fs.mono_bold   = NOTO_MONO_BOLD;
+    std::string pdf = asciiquack::convert_to_pdf(*doc, false, fs);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // Verify multiple pages were produced.
+    std::size_t page_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find("/Type /Page\n", pos)) != std::string::npos) {
+        ++page_count;
+        ++pos;
+    }
+    EXPECT(page_count > 1);
+
+    end_test();
+#endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3202,6 +3511,12 @@ int main(int argc, char* argv[]) {
     test_pdf_ttf_xref_still_valid_with_font();
     test_pdf_ttf_postscript_name_from_table();
     test_pdf_ttf_os2_vertical_metrics();
+    test_pdf_fontset_regular_only();
+    test_pdf_fontset_all_six_styles();
+    test_pdf_fontset_object_layout_two_ttf();
+    test_pdf_fontset_mono_custom();
+    test_pdf_fontset_noto_metrics_differ_from_helvetica();
+    test_pdf_fontset_xref_valid_six_fonts();
 
     // Summary
     std::cout << "\n============================\n";
