@@ -135,82 +135,25 @@ The items below are grouped by priority.  Items are **P3** (advanced or rarely u
     - When a section is nested more than one level deeper than its parent,
       a warning is emitted to `stderr`.
 
+21. **DocBook 5 backend** (`-b docbook5`)
+    - The CLI already falls back to html5 for unknown backends.
+    - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
+
 ---
 
-## To investigate
+## TODO - PDF Output
 
-### PDF Output Investigation
-
-PDF output is one of the potentially interesting targets for asciiquack.
-Below is an analysis of what would be involved.
-
-#### What Asciidoctor does
-
-Ruby Asciidoctor delegates PDF output to the **asciidoctor-pdf** gem
-(a separate ~25,000-line Ruby project), which:
-
-1. Parses the document into the standard Asciidoctor AST (already done by
-   the core parser).
-2. Walks the AST with a PDF-specific converter and lays out content using
-   the **Prawn** Ruby PDF library.
-3. Prawn builds a PDF stream, handling: text layout, fonts (TTF embedding),
-   image inclusion (PNG/JPEG/SVG), tables, and page geometry.
-
-#### Options for asciiquack
-
-**Option A – Native C++ PDF generation with libharu (LibHaru)**
-- [libharu](http://libharu.org/) is a lightweight, BSD-licensed C library
-  for generating PDF files (no dependencies beyond zlib/png).
-- Coverage: text, images, basic tables, Unicode (with font embedding).
-- Limitations: no complex text layout (line-breaking, hyphenation),
-  no advanced table features, no SVG.
-- Effort estimate: **medium** (~1,500–2,000 lines for a basic converter).
-  The core is straightforward but typography is difficult.
-
-**Option B – Generate troff/groff and convert via ghostscript**
-- Use the existing man page backend (`-b manpage`) piped through
-  `groff -Tpdf | ps2pdf` or `groff -T pdf`.
-- Pros: zero new dependencies; the hard work (layout) is done by groff.
-- Cons: output looks like a man page, not a polished document; only
-  suits technical manuals.
-- Effort: **very low** (the backend already exists).
-
-**Option C – Generate HTML and use a headless browser (wkhtmltopdf / Chrome)**
-- Convert to HTML5 (already done), then call `wkhtmltopdf` or
-  `chromium --headless --print-to-pdf` as a subprocess.
-- Pros: full fidelity HTML→PDF; CSS styling, images, all features work.
-- Cons: external dependency on a headless browser or `wkhtmltopdf`;
-  not suitable for environments without a display server.
-- Effort: **very low** to add the subprocess call; medium to integrate
-  cleanly into the CLI (`-b pdf` → run html5 + print-to-pdf).
-
-**Option D – Generate LaTeX and compile with pdflatex/xelatex**
-- Add a LaTeX converter backend (similar in scope to the man page backend).
-- Then `pdflatex` or `xelatex` produces a high-quality PDF.
-- Pros: high-quality typesetting; already a common path for AsciiDoc users.
-- Cons: requires a TeX installation; LaTeX escaping is non-trivial; large
-  table/image support adds complexity.
-- Effort: **medium–high** (~2,000–3,000 lines for a comprehensive converter).
-
-#### Recommendation
-
-For asciiquack specifically, **Option C (HTML + headless browser)** offers
-the best return on investment:
-
-- Zero new C++ code required beyond a subprocess wrapper.
-- Full visual fidelity (the HTML5 backend is already polished).
-- A `--pdf` flag or `-b pdf` option can invoke the converter automatically.
-
-**Option D (LaTeX)** is worth considering if asciiquack is intended to be
-self-contained without browser/TeX runtime dependencies, but is substantially
-more work.
-
-**Option A (libharu)** provides native PDF without runtime dependencies but
-requires implementing a complete text-layout engine, which is the hardest
-part of PDF generation.
-
-A future sprint should start with Option C as a quick proof-of-concept, then
-evaluate whether the output quality justifies adding a LaTeX backend.
+This is a bit of a hail mary, but see what you can do - I've added strutype, utf8, TextFlow.hpp and a
+stripped down copy of libharu to the repository.  See what you can put
+together to produce PDFs using logic extracted from those components - you don't have
+to use any of them verbatim - for example, perhaps you can generalize TextFlow using
+utf8 or struetype info....
+(struetype is header only, and utf8 is also small, so you can probably leave
+them as is, but please identify what you need out of libharu and rework it into
+a single C++17 header-only version, keeping their copyright and license at the
+top of the file.)
+The idea here will be user can do html5 to pdf via web browser themselves,
+but we want at least a basic, decent looking capability
 
 ---
 
@@ -227,10 +170,6 @@ evaluate whether the output quality justifies adding a LaTeX backend.
     - Could integrate a C++ highlighting library (e.g. `highlight`) or emit
       the data attributes that a client-side JS library expects.
     - Ruby source: `lib/asciidoctor/syntax_highlighter/`.
-
-21. **DocBook 5 backend** (`-b docbook5`)
-    - The CLI already falls back to html5 for unknown backends.
-    - Ruby source: `lib/asciidoctor/converter/docbook5.rb` (837 lines).
 
 ---
 
