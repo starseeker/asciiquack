@@ -15,14 +15,7 @@ duck:: ascii
 ----
 ```
 
-A C++17 translation of asciidoctor.
-
-Currently a work in progress.  The desired end state is a clean,
-self-contained, strictly C++17 compliant codebase that can handle
-most of what real-world asciidoc use would entail - we'll see if
-we get there.
-
-Command line option via https://github.com/jarro2783/cxxopts
+A C++17 translation of (most of) asciidoctor.
 
 ## Building
 
@@ -70,3 +63,8 @@ patterns require features RE2 intentionally omits:
 - **Negative lookahead** – e.g. `(?!//[^/])` (description-list guard)
 
 PCRE2 is equally fast in practice and supports the full pattern set.
+
+### Other dependencies
+
+- µlight (https://github.com/eisenwave/ulight) is used for syntax highlighting if the compiler supports C++23
+- Command line options are supported via https://github.com/jarro2783/cxxopts
