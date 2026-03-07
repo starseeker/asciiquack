@@ -74,6 +74,9 @@ Ruby feature set is still missing.
 | `kbd:[]`, `btn:[]`, `menu:[]` inline macros | ✅ |
 | Hard line-break (` +`) | ✅ |
 | Footnotes (`footnote:[text]`, `footnoteref:[id,text]`) | ✅ |
+| Inline stem/math macros (`stem:[]`, `latexmath:[]`, `asciimath:[]`) | ✅ |
+| Block stem (`[stem]` on a pass block → display math) | ✅ |
+| Source callout markers (`<N>` in listings) paired with colist | ✅ |
 | ID generation helper (`generate_id`) | ✅ |
 | HTML5 converter (all above block / inline types) | ✅ |
 | Embedded mode (`--no-header-footer`) | ✅ |
@@ -84,24 +87,18 @@ Ruby feature set is still missing.
 | Multi-line attribute values (trailing `\` continuation) | ✅ |
 | `include::` directive (safe-mode–aware) | ✅ |
 | Conditional preprocessing (`ifdef::`, `ifndef::`, `ifeval::`) | ✅ |
+| Admonition captions from locale attributes (`note-caption`, etc.) | ✅ |
+| Preamble `<div>` only when sections follow | ✅ |
+| Stylesheet linking (`:linkcss:`, `:stylesheet:` attrs) | ✅ |
+| `docinfo.html` / `docinfo-footer.html` injection (unsafe mode) | ✅ |
+| MathJax CDN loader when `:stem:` attribute is set | ✅ |
+| `doctype: manpage` title parsing (`manname`, `manvolnum`) | ✅ |
 
 ---
 
 ## What Is Missing
 
-The items below are grouped by priority.  Items marked **P2** are common but
-not universal; **P3** are advanced or rarely used.
-
-### P2 – Commonly Needed
-
-12. **`doctype: manpage`** special processing
-    - Synopsis, Name section, and man-page–specific section handling.
-    - Ruby source: `lib/asciidoctor/document.rb` (doctype: manpage path).
-
-13. **Preamble / abstract as standalone section**
-    - When a document starts directly with body content and no header, the
-      Ruby version wraps it in a preamble `<div id="preamble">` only if there
-      are subsequent sections.  Complex edge cases exist.
+The items below are grouped by priority.  Items are **P3** (advanced or rarely used).
 
 ### P3 – Advanced / Optional
 
@@ -123,44 +120,28 @@ not universal; **P3** are advanced or rarely used.
 
 22. **Man page backend** (`-b manpage`)
     - Ruby source: `lib/asciidoctor/converter/manpage.rb` (757 lines).
+    - `doctype: manpage` title parsing is already implemented;
+      full troff/groff output requires a separate converter.
 
-23. **Source callout rendering** (`<N>` markers in source blocks)
-    - Callout numbers in source blocks are paired with `<N>` items in the
-      following callout list.  Currently the markers are passed through as
-      literal text.
-
-24. **Full table-column spec parsing**
+23. **Full table-column spec parsing**
     - The `cols` attribute supports rich specifiers: `cols="1,2,3"`,
       `cols="1*,2*"` (proportional), `cols=">1,^2,<3"` (alignment),
       `cols="1h,2,3"` (header column style), etc.
     - AsciiDoc-style cell content (the `a|` cell type for nested AsciiDoc).
 
-25. **Markdown-compatible section titles** (`#`, `##`, …)
+24. **Markdown-compatible section titles** (`#`, `##`, …)
     - Ruby Asciidoctor historically supported Markdown-style headings
       via `Asciidoctor::Compliance.markdown_syntax`.  This mode is rarely
       needed; document it as out-of-scope or add as an option.
 
-26. **`stem:[]` / `latexmath:[]` inline and block macros**
-    - LaTeX / MathML math rendering.
-    - Typically delegates to MathJax or KaTeX at runtime.
-
-27. **docinfo files** (header/footer HTML fragments injected from disk)
-    - `docinfo.html`, `<docname>-docinfo.html`, etc.
-    - Requires safe-mode–aware file I/O.
-
-28. **Stylesheet linking** (`:linkcss:` attribute, `:stylesheet:` attribute)
-    - Currently the converter always inlines a minimal CSS block.
-    - Should support linking to an external file or the full Asciidoctor
-      default stylesheet.
-
-29. **`toc-title:` and other localisation attributes**
-    - Built-in strings ("Note", "Tip", "Figure", "Table", etc.) should use
-      the locale attributes from `data/locale/attributes-<lang>.adoc`.
-
-30. **Logging / diagnostics** (`:sourcemap:` attribute, warning messages)
+25. **Logging / diagnostics** (`:sourcemap:` attribute, warning messages)
     - The Ruby implementation emits structured log messages for missing
       includes, unknown attributes, unclosed blocks, etc.
     - Ruby source: `lib/asciidoctor/logging.rb`.
+
+26. **Section nesting validation**
+    - Section nesting deeper than one level beyond parent is silently accepted.
+    - Ruby source: `lib/asciidoctor/section.rb`.
 
 ---
 
@@ -176,6 +157,7 @@ not universal; **P3** are advanced or rarely used.
 | 6 | ~~Attribute entries with multi-line values (trailing `\`) silently discarded the continuation~~ | `parser.cpp` | **Fixed** |
 | 7 | ~~Description list term regex could match table separator rows~~ | `parser.cpp` | **Fixed** |
 | 8 | Section nesting deeper than one level beyond parent is silently accepted | `parser.cpp` | Low |
+| 9 | ~~Preamble `<div>` was emitted even when no sections followed~~ | `html5.hpp` | **Fixed** |
 
 ---
 

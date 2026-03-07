@@ -943,9 +943,15 @@ private:
             result.append(escaped_source, last,
                           static_cast<std::size_t>(m.position()) - last);
             std::string num = m[1].str();
-            // Emit an anchor so the callout list item can link back
-            std::string anchor_id = "CO" + (block_id.empty() ? num : block_id + "-" + num);
-            result += "<b id=\"" + anchor_id + "\" class=\"conum\">(" + num + ")</b>";
+            // Emit an anchor so the callout list item can link back.
+            // Build the badge in one append sequence to minimise allocations.
+            const std::string& anchor_id_mid = block_id.empty() ? num : block_id + "-" + num;
+            result.reserve(result.size() + 28 + anchor_id_mid.size() + num.size());
+            result += "<b id=\"CO";
+            result += anchor_id_mid;
+            result += "\" class=\"conum\">(";
+            result += num;
+            result += ")</b>";
             last = static_cast<std::size_t>(m.position()) +
                    static_cast<std::size_t>(m.length());
         }
