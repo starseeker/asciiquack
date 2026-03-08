@@ -228,11 +228,12 @@ message(STATUS "  Image support: using bundled lodepng; PNG and JPEG images enab
 # ── Main executable ───────────────────────────────────────────────────────────
 add_executable(asciiquack
     asciiquack.cpp
-    lodepng.cpp
-    minipdf.cpp
     parser.cpp
+    vendor/lodepng.cpp
+    vendor/minipdf.cpp
 )
 target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
 target_compile_definitions(asciiquack PRIVATE
     ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
 )
@@ -247,12 +248,13 @@ if(BUILD_TESTS)
 
     add_executable(asciiquack_tests
         test_asciiquack.cpp
-        lodepng.cpp
-        minipdf.cpp
         parser.cpp
+        vendor/lodepng.cpp
+        vendor/minipdf.cpp
     )
     target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR})
-    target_compile_definitions(asciiquack_tests PRIVATE
+	 target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
+	 target_compile_definitions(asciiquack_tests PRIVATE
         ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
         CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
@@ -268,11 +270,12 @@ option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
 if(BUILD_BENCHMARK)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
-        lodepng.cpp
-        minipdf.cpp
         parser.cpp
+        vendor/lodepng.cpp
+        vendor/minipdf.cpp
     )
     target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
+	 target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
     aqregex_configure(bench_asciiquack)
     ulight_configure(bench_asciiquack)
 endif()
