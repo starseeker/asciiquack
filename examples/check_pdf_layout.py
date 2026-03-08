@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""check_pdf_layout.py – Automated PDF layout analysis using OpenCV.
+"""check_pdf_layout.py - Automated PDF layout analysis using OpenCV.
 
 This script converts a PDF to page images and analyses each page for common
 layout defects:
@@ -7,16 +7,21 @@ layout defects:
   * Grey code-block background rectangles with insufficient spacing before
     the following body text (the "overlap" bug: paragraph ascenders visually
     bleeding into the grey background).
-  * Text overflowing the top or bottom page margins.
+  * Text overflowing the top, bottom, left, or right page margins.
 
 The primary check is a *gap measurement*: for each grey code-block box the
 script finds the actual bottom of the grey region and the start of the first
 significant body-text run below it.  If the gap is smaller than
 MIN_GAP_AFTER_BOX_PX the box is flagged.
 
-At 150 DPI the fixed gap (≈ 11 pt) produces roughly 19 px of clearance; the
-buggy gap (≈ 5 pt) would produce only 1–5 px of clearance.  The threshold is
-set conservatively at 8 px (≈ 3.8 pt) to give room for minor anti-aliasing.
+At 150 DPI the correct gap (>= 11 pt) produces at least 23 px of clearance.
+A gap smaller than MIN_GAP_AFTER_BOX_PX (4 px ~ 1.9 pt) is a defect.
+
+Heading-rule spacing is checked by dedicated unit tests in test_asciiquack.cpp
+(test_pdf_heading_rule_not_through_body, test_pdf_heading_rule_position_below_heading).
+Attempting to detect heading-rule bars from the rasterized image is not
+reliable because table borders (0.5 grey) fall in the same greyscale range and
+produce false positives.
 
 Usage
 -----
@@ -27,9 +32,9 @@ itself, generating it automatically when an ``asciiquack`` binary is found.
 
 Exit codes
 ----------
-  0 – no defects detected
-  1 – one or more defects detected
-  2 – usage / environment error
+  0 - no defects detected
+  1 - one or more defects detected
+  2 - usage / environment error
 """
 
 import argparse
@@ -47,26 +52,26 @@ except ImportError as exc:
     print("Install with: pip install opencv-python-headless pdf2image")
     sys.exit(2)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 # Rendering resolution.  150 DPI gives ~2 pt/pixel, sufficient to detect the
 # ~4 pt overlap described in the bug report.
 DEFAULT_DPI = 150
 
 # Grey background detection thresholds (0-255 scale).
-# The code-block background is rendered at RGB (0.95, 0.95, 0.95) ≈ 242/255.
+# The code-block background is rendered at RGB (0.95, 0.95, 0.95) ~= 242/255.
 GREY_LO = 210   # lower bound for "light grey"
-GREY_HI = 252   # upper bound (pure white ≥ 253 is excluded)
+GREY_HI = 252   # upper bound (pure white >= 253 is excluded)
 
-# Dark text detection threshold.
+# Dark text/line detection threshold.
 TEXT_DARK = 80   # pixels darker than this are "ink / text"
 
 # Minimum dark pixels in a row for it to count as a "text row".
 MIN_TEXT_ROW_PX = 50
 
-# Minimum area (pixels²) of a grey connected component to be considered a
+# Minimum area (pixels^2) of a grey connected component to be considered a
 # code-block background (not a table rule or admonition side-bar).
 MIN_GREY_AREA = 300
 
@@ -75,19 +80,31 @@ MIN_GREY_AREA = 300
 MIN_GREY_WIDTH_FRACTION = 0.30
 
 # Minimum rows to scan below the grey box when searching for following text.
-MAX_SCAN_ROWS = 80   # ~38 pt at 150 DPI – more than enough
+MAX_SCAN_ROWS = 80   # ~38 pt at 150 DPI - more than enough
 
 # Gap threshold: the measured gap (in rows) between the grey box bounding
 # bottom and the first body-text row below it must exceed this value.
-# A gap of 1-3 rows (≈0.5-1.5 pt at 150 DPI) indicates the following text
-# starts immediately adjacent to or inside the grey box.  Values of 4+ rows
-# (≈2 pt) correspond to visually separate elements.
-# The fixed code produces gaps of 6+ rows; the pre-fix bug produced 1-3 rows.
+# A gap of 1-3 rows indicates the following text starts immediately adjacent
+# to or inside the grey box.  Values of 4+ rows correspond to visually
+# separate elements.  The fixed code produces gaps of 6+ rows.
 MIN_GAP_AFTER_BOX_PX = 4
 
-# ─────────────────────────────────────────────────────────────────────────────
+# Margin overflow detection.
+#
+# The PDF left and right margins are each 72 pt.  We check a gutter that is
+# *inside* the margin (between the page edge and the content edge):
+#   - left gutter:  x in [0, MARGIN_GUTTER_PT / 72 * dpi)
+#   - right gutter: x in [page_w - MARGIN_GUTTER_PT / 72 * dpi, page_w)
+#
+# MARGIN_GUTTER_PT is set to 50 pt (< 72 pt) so we never accidentally flag
+# legitimate content at the content edge, only true margin overflows.
+MARGIN_GUTTER_PT = 50   # points of each margin to check for overflows
+# Minimum dark pixel count in the gutter to flag as "overflow".
+MARGIN_OVERFLOW_PX = 30
+
+# -----------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def find_asciiquack() -> "str | None":
     """Return the path to the asciiquack binary, or None."""
@@ -112,7 +129,7 @@ def generate_pdf(adoc_path: Path, pdf_path: Path) -> bool:
     if binary is None:
         print("ERROR: Cannot find asciiquack binary.  Build the project first.")
         return False
-    print(f"Generating {pdf_path} …")
+    print(f"Generating {pdf_path} ...")
     result = subprocess.run(
         [binary, "-b", "pdf", str(adoc_path), "-o", str(pdf_path)],
         capture_output=True, text=True,
@@ -127,7 +144,7 @@ def find_grey_boxes(grey_mask: np.ndarray, page_w: int,
                     ) -> "list[tuple[int,int,int,int]]":
     """Return bounding boxes (x, y, w, h) of large light-grey regions.
 
-    Only regions wider than MIN_GREY_WIDTH_FRACTION × page_w are returned so
+    Only regions wider than MIN_GREY_WIDTH_FRACTION x page_w are returned so
     that narrow table rules and admonition side-bars are excluded.
     """
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
@@ -151,7 +168,7 @@ def first_text_row_after(dark_mask: np.ndarray,
                           start_row: int,
                           bx: int, bw: int,
                           page_h: int) -> "int | None":
-    """Return the first row index ≥ start_row that has at least
+    """Return the first row index >= start_row that has at least
     MIN_TEXT_ROW_PX dark pixels within the x-range [bx, bx+bw].
 
     Returns None if no such row is found within MAX_SCAN_ROWS.
@@ -163,14 +180,161 @@ def first_text_row_after(dark_mask: np.ndarray,
     return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Individual checks
+# -----------------------------------------------------------------------------
+
+def check_code_block_gaps(grey_mask: np.ndarray,
+                           dark_mask: np.ndarray,
+                           page_num: int,
+                           page_w: int, page_h: int,
+                           annotated: "np.ndarray | None",
+                           ) -> "list[dict]":
+    """Check that following body text starts far enough below each grey box."""
+    defects: "list[dict]" = []
+
+    boxes = find_grey_boxes(grey_mask, page_w)
+    for (bx, by, bw, bh) in boxes:
+        grey_bot   = by + bh - 1
+        first_text = first_text_row_after(dark_mask, grey_bot + 1,
+                                           bx, bw, page_h)
+        gap = (first_text - grey_bot) if first_text is not None else MAX_SCAN_ROWS
+
+        defect = None
+        if gap < MIN_GAP_AFTER_BOX_PX:
+            defect = {
+                "page": page_num,
+                "description": (
+                    f"Page {page_num}: grey code-block box bottom row {grey_bot}, "
+                    f"next text row {first_text} "
+                    f"(gap = {gap} px ~= {gap / (DEFAULT_DPI / 72.0):.1f} pt) "
+                    f"- following text too close to code-block background."
+                ),
+            }
+            defects.append(defect)
+
+        if annotated is not None:
+            colour = (255, 0, 0) if defect else (0, 200, 0)
+            cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), colour, 2)
+            cv2.line(annotated, (bx, grey_bot), (bx + bw, grey_bot),
+                     (0, 128, 255), 1)
+            if first_text is not None:
+                cv2.line(annotated,
+                         (bx, first_text), (bx + bw, first_text),
+                         (128, 0, 255), 1)
+            label = f"cb-gap={gap}px"
+            cv2.putText(annotated, label, (bx + 2, max(10, grey_bot - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                        (255, 0, 0) if defect else (0, 128, 0), 1, cv2.LINE_AA)
+
+    return defects
+
+
+def check_left_margin_overflow(grey_img: np.ndarray,
+                                page_num: int,
+                                dpi: int,
+                                annotated: "np.ndarray | None",
+                                ) -> "list[dict]":
+    """Detect text/ink pixels in the left gutter (inside the left margin).
+
+    The gutter width is MARGIN_GUTTER_PT points from the page edge, which
+    must be less than the actual page margin (72 pt) so that legitimate
+    content at the margin edge is not flagged.
+    """
+    gutter_w = int(MARGIN_GUTTER_PT / 72.0 * dpi)
+    gutter   = grey_img[:, :gutter_w]
+    dark_ct  = int(np.sum(gutter < TEXT_DARK))
+    if dark_ct <= MARGIN_OVERFLOW_PX:
+        return []
+    defect = {
+        "page": page_num,
+        "description": (
+            f"Page {page_num}: {dark_ct} dark pixels in left gutter "
+            f"(leftmost {gutter_w}px = {MARGIN_GUTTER_PT}pt from left edge) "
+            f"- possible left-margin overflow."
+        ),
+    }
+    if annotated is not None:
+        cv2.rectangle(annotated, (0, 0), (gutter_w, annotated.shape[0] - 1),
+                      (255, 128, 0), 2)
+    return [defect]
+
+
+def check_right_margin_overflow(grey_img: np.ndarray,
+                                 page_num: int,
+                                 page_w: int,
+                                 dpi: int,
+                                 annotated: "np.ndarray | None",
+                                 ) -> "list[dict]":
+    """Detect text/ink pixels in the right gutter (inside the right margin).
+
+    The gutter width is MARGIN_GUTTER_PT points from the right page edge.
+    """
+    gutter_w = int(MARGIN_GUTTER_PT / 72.0 * dpi)
+    gutter   = grey_img[:, page_w - gutter_w:]
+    dark_ct  = int(np.sum(gutter < TEXT_DARK))
+    if dark_ct <= MARGIN_OVERFLOW_PX:
+        return []
+    defect = {
+        "page": page_num,
+        "description": (
+            f"Page {page_num}: {dark_ct} dark pixels in right gutter "
+            f"(rightmost {gutter_w}px = {MARGIN_GUTTER_PT}pt from right edge) "
+            f"- possible right-margin overflow."
+        ),
+    }
+    if annotated is not None:
+        cv2.rectangle(annotated,
+                      (page_w - gutter_w, 0),
+                      (page_w - 1, annotated.shape[0] - 1),
+                      (255, 128, 0), 2)
+    return [defect]
+
+
+def check_bottom_margin(grey_img: np.ndarray, page_num: int,
+                         page_h: int,
+                         dpi: int,
+                         margin_pt: int = 50) -> "list[dict]":
+    """Detect text below the bottom margin."""
+    margin_px = int(margin_pt / 72.0 * dpi)
+    dark = int(np.sum(grey_img[page_h - margin_px:, :] < TEXT_DARK))
+    if dark > 50:
+        return [{
+            "page": page_num,
+            "description": (
+                f"Page {page_num}: {dark} dark pixels in the bottom "
+                f"{margin_px}px ({margin_pt}pt) margin (text overflow?)."
+            ),
+        }]
+    return []
+
+
+def check_top_margin(grey_img: np.ndarray, page_num: int,
+                      dpi: int,
+                      margin_pt: int = 50) -> "list[dict]":
+    """Detect text above the top margin."""
+    margin_px = int(margin_pt / 72.0 * dpi)
+    dark = int(np.sum(grey_img[:margin_px, :] < TEXT_DARK))
+    if dark > 50:
+        return [{
+            "page": page_num,
+            "description": (
+                f"Page {page_num}: {dark} dark pixels in the top "
+                f"{margin_px}px ({margin_pt}pt) margin (text overflow?)."
+            ),
+        }]
+    return []
+
+
+
+# -----------------------------------------------------------------------------
 # Per-page analysis
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def check_page(image: np.ndarray, page_num: int,
+               dpi: int,
                save_annotated: bool, out_dir: Path) -> "list[dict]":
     """Analyse a single page image and return a list of defect dicts."""
-    defects: "list[dict]" = []
     page_h, page_w = image.shape[:2]
 
     grey_img = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
@@ -181,107 +345,29 @@ def check_page(image: np.ndarray, page_num: int,
     dark_mask = np.zeros(grey_img.shape, dtype=np.uint8)
     dark_mask[grey_img < TEXT_DARK] = 255
 
-    boxes = find_grey_boxes(grey_mask, page_w)
-
     annotated = image.copy() if save_annotated else None
 
-    for (bx, by, bw, bh) in boxes:
-        # Use the connected-component bounding box bottom as the reference.
-        # This already includes anti-aliased edges of the last code line, so
-        # scanning for text starts immediately after all code content.
-        grey_bot = by + bh - 1
+    defects: "list[dict]" = []
 
-        # First significant text row BELOW the grey bounding box.
-        first_text = first_text_row_after(dark_mask, grey_bot + 1,
-                                           bx, bw, page_h)
+    defects += check_code_block_gaps(
+        grey_mask, dark_mask, page_num, page_w, page_h, annotated)
 
-        if first_text is None:
-            # No following text on this page – nothing to flag
-            gap = MAX_SCAN_ROWS  # treat as large gap
-        else:
-            gap = first_text - grey_bot
-
-        defect = None
-        if gap < MIN_GAP_AFTER_BOX_PX:
-            defect = {
-                "page":        page_num,
-                "box":         (bx, by, bw, bh),
-                "grey_bottom": grey_bot,
-                "first_text":  first_text,
-                "gap_px":      gap,
-                "description": (
-                    f"Page {page_num}: grey box bottom at row {grey_bot}, "
-                    f"next text at row {first_text} "
-                    f"(gap = {gap} px ≈ {gap / (DEFAULT_DPI / 72.0):.1f} pt) "
-                    f"– insufficient spacing, following text may overlap the "
-                    f"code-block background."
-                ),
-            }
-            defects.append(defect)
-
-        if save_annotated and annotated is not None:
-            colour = (255, 0, 0) if defect else (0, 200, 0)
-            # Draw box outline
-            cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh),
-                          colour, 2)
-            # Mark the grey actual bottom with a horizontal line
-            cv2.line(annotated, (bx, grey_bot), (bx + bw, grey_bot),
-                     (0, 128, 255), 1)
-            # Mark first text row if found
-            if first_text is not None:
-                cv2.line(annotated, (bx, first_text), (bx + bw, first_text),
-                         (128, 0, 255), 1)
-            # Label gap value
-            label = f"gap={gap}px"
-            cv2.putText(annotated, label, (bx + 2, grey_bot - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (255, 0, 0) if defect else (0, 128, 0), 1,
-                        cv2.LINE_AA)
+    defects += check_left_margin_overflow(grey_img, page_num, dpi, annotated)
+    defects += check_right_margin_overflow(grey_img, page_num, page_w, dpi, annotated)
+    defects += check_bottom_margin(grey_img, page_num, page_h, dpi)
+    defects += check_top_margin(grey_img, page_num, dpi)
 
     if save_annotated and annotated is not None:
         out_path = out_dir / f"page_{page_num:03d}_annotated.png"
         cv2.imwrite(str(out_path), cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
-        print(f"  Saved annotated page {page_num} → {out_path}")
+        print(f"  Saved annotated page {page_num} -> {out_path}")
 
     return defects
 
 
-def check_bottom_margin(image: np.ndarray, page_num: int,
-                         margin_px: int = 20) -> "list[dict]":
-    """Detect text below the bottom margin."""
-    page_h = image.shape[0]
-    grey_img = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    dark = int(np.sum(grey_img[page_h - margin_px:, :] < TEXT_DARK))
-    if dark > 50:
-        return [{
-            "page": page_num,
-            "description": (
-                f"Page {page_num}: {dark} dark pixels in the bottom "
-                f"{margin_px}px margin (text overflow?)."
-            ),
-        }]
-    return []
-
-
-def check_top_margin(image: np.ndarray, page_num: int,
-                      margin_px: int = 20) -> "list[dict]":
-    """Detect text above the top margin."""
-    grey_img = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    dark = int(np.sum(grey_img[:margin_px, :] < TEXT_DARK))
-    if dark > 50:
-        return [{
-            "page": page_num,
-            "description": (
-                f"Page {page_num}: {dark} dark pixels in the top "
-                f"{margin_px}px margin (text overflow?)."
-            ),
-        }]
-    return []
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Entry point
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -321,7 +407,7 @@ def main() -> int:
         print(f"ERROR: PDF not found at {pdf_path}")
         return 2
 
-    print(f"Analysing {pdf_path} at {args.dpi} DPI …")
+    print(f"Analysing {pdf_path} at {args.dpi} DPI ...")
 
     try:
         pages = convert_from_path(str(pdf_path), dpi=args.dpi)
@@ -334,10 +420,8 @@ def main() -> int:
     all_defects: "list[dict]" = []
 
     for page_num, page_img in enumerate(pages, start=1):
-        img = np.array(page_img)  # PIL RGB → numpy
-        defects  = check_page(img, page_num, args.save_annotated, out_dir)
-        defects += check_bottom_margin(img, page_num)
-        defects += check_top_margin(img, page_num)
+        img = np.array(page_img)  # PIL RGB -> numpy
+        defects = check_page(img, page_num, args.dpi, args.save_annotated, out_dir)
         all_defects.extend(defects)
 
     print()
@@ -347,9 +431,10 @@ def main() -> int:
             print(f"  [!] {d['description']}")
         return 1
     else:
-        print(f"No layout defects detected across {len(pages)} page(s). ✓")
+        print(f"No layout defects detected across {len(pages)} page(s). [OK]")
         return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

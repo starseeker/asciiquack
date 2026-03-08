@@ -432,3 +432,335 @@ line 2 of that block
 IMPORTANT: Admonition at the end of dense mixed content.
 
 Paragraph terminating the dense mixed content section.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 11. Heading–Code Block Interaction
+// ─────────────────────────────────────────────────────────────────────────────
+
+The decorative rule drawn under level-0 and level-1 headings must not bleed
+into the grey background of a code block that immediately follows.
+
+=== 11.1 Level-1 heading immediately followed by code block
+
+== Heading Directly Above Code
+
+----
+code line right below a level-1 heading with its decorative rule
+second code line
+----
+
+Paragraph after the heading–code combination.
+
+=== 11.2 Level-2 heading immediately followed by code block
+
+==== SubHeading Above Code
+
+----
+code right below a level-2 heading (no rule)
+----
+
+Paragraph after the level-2 heading–code combination.
+
+=== 11.3 Code block immediately followed by heading
+
+----
+code block before heading
+----
+
+== Heading Right After Code Block
+
+Paragraph under that heading.
+
+=== 11.4 Consecutive headings at every level
+
+== Level-1 After Level-1
+
+=== Level-2 After Level-1
+
+==== Level-3 After Level-2
+
+===== Level-4 After Level-3
+
+====== Level-5 After Level-4
+
+Paragraph below all the consecutive headings above.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 12. Table Spacing Interactions
+// ─────────────────────────────────────────────────────────────────────────────
+
+Tables must have adequate spacing before and after them regardless of what
+block type precedes or follows.
+
+=== 12.1 Table immediately followed by paragraph
+
+[cols="1,1,1"]
+|===
+| Col A | Col B | Col C
+
+| 1A | 1B | 1C
+| 2A | 2B | 2C
+|===
+
+Paragraph right after a three-column table.  The last table border must not
+overlap this text.
+
+=== 12.2 Table immediately followed by code block
+
+[cols="1,1"]
+|===
+| Left | Right
+
+| Cell A | Cell B
+|===
+
+----
+code block right after a table
+second line
+----
+
+Paragraph after the table–code combination.
+
+=== 12.3 Table immediately followed by heading
+
+[cols="1,1"]
+|===
+| X | Y
+
+| val1 | val2
+|===
+
+== Heading Right After a Table
+
+Paragraph under that heading.
+
+=== 12.4 Table with many rows (potential page-break inside table)
+
+[cols="1,1"]
+|===
+| Name | Value
+
+| row-01 | alpha
+| row-02 | beta
+| row-03 | gamma
+| row-04 | delta
+| row-05 | epsilon
+| row-06 | zeta
+| row-07 | eta
+| row-08 | theta
+| row-09 | iota
+| row-10 | kappa
+| row-11 | lambda
+| row-12 | mu
+| row-13 | nu
+| row-14 | xi
+| row-15 | omicron
+| row-16 | pi
+| row-17 | rho
+| row-18 | sigma
+| row-19 | tau
+| row-20 | upsilon
+|===
+
+Paragraph after a 20-row table that may span multiple pages.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 13. Admonition Interactions
+// ─────────────────────────────────────────────────────────────────────────────
+
+=== 13.1 Multi-line admonition bodies
+
+NOTE: Short single-line note.
+
+IMPORTANT: This is a very long admonition body that must word-wrap across
+multiple lines when the page width is not enough to fit everything.  The
+label *IMPORTANT:* must stay pinned to the first line and must not overlap
+any subsequent line of the body text.  The quick brown fox jumps over the
+lazy dog.  Pack my box with five dozen liquor jugs.
+
+WARNING: Another long warning to make sure the wrapping is consistent
+regardless of which admonition keyword is used.  All five admonition types
+use the same rendering code path.
+
+Paragraph after multi-line admonitions.
+
+=== 13.2 Admonition immediately followed by admonition
+
+TIP: First consecutive admonition.
+
+CAUTION: Second consecutive admonition immediately after the first.
+
+NOTE: Third consecutive admonition.
+
+Paragraph after three consecutive admonitions.
+
+=== 13.3 Admonition followed by code block
+
+WARNING: Admonition immediately before code block.
+
+----
+code right after an admonition
+second code line
+----
+
+Paragraph after admonition–code pair.
+
+=== 13.4 Code block followed by admonition
+
+----
+code block before admonition
+----
+
+TIP: Admonition right after a code block.
+
+Paragraph after code–admonition pair.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 14. Block Quote Interactions
+// ─────────────────────────────────────────────────────────────────────────────
+
+=== 14.1 Block quote followed by paragraph
+
+[quote]
+____
+The first block quote body.
+____
+
+Paragraph right after the first block quote.
+
+=== 14.2 Block quote followed by code block
+
+[quote]
+____
+The second block quote body.
+____
+
+----
+code right after a block quote
+----
+
+Paragraph after quote–code pair.
+
+=== 14.3 Block quote followed by list
+
+[quote]
+____
+The third block quote body.
+____
+
+* List item right after a block quote
+* Second list item
+
+Paragraph after quote–list pair.
+
+=== 14.4 Long block quote that wraps to multiple lines
+
+[quote]
+____
+This is a longer block quote that is intended to wrap across several lines
+in order to exercise the left vertical bar height calculation.  The bar must
+cover the full height of the quote body and not extend beyond it.
+The quick brown fox jumps over the lazy dog.
+____
+
+Paragraph after the long block quote.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 15. List Interactions
+// ─────────────────────────────────────────────────────────────────────────────
+
+=== 15.1 Ordered list followed by unordered list
+
+. First ordered item
+. Second ordered item
+. Third ordered item
+
+* First unordered item
+* Second unordered item
+
+Paragraph after ordered→unordered list transition.
+
+=== 15.2 Unordered list followed by description list
+
+* Bullet A
+* Bullet B
+
+term-one:: Description of the first term.
+term-two:: Description of the second term.
+
+Paragraph after list→dlist transition.
+
+=== 15.3 Long wrapped list items
+
+* This list item is deliberately long so that it wraps onto a second line
+  within the bulleted list.  The continuation text must be indented to the
+  same column as the start of the item text, not to the bullet position.
+* Short item.
+* Another deliberately long item to check that multiple wrapping items in a
+  single list all produce consistent indentation.  The quick brown fox jumps
+  over the lazy dog.
+
+Paragraph after the multi-line list.
+
+=== 15.4 Ordered list with double-digit numbers
+
+. Item one
+. Item two
+. Item three
+. Item four
+. Item five
+. Item six
+. Item seven
+. Item eight
+. Item nine
+. Item ten
+. Item eleven — label "11." must not shift other items
+
+Paragraph after list with double-digit number label.
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 16. Inline Markup Edge Cases
+// ─────────────────────────────────────────────────────────────────────────────
+
+=== 16.1 Inline markup at start and end of paragraph
+
+*Bold at start* and normal in the middle and _italic at end_.
+
+`Mono at start` and *bold in the middle* and normal at end.
+
+Normal start, *bold middle*, `mono end`.
+
+=== 16.2 Mixed markup in list items
+
+* *Bold item* with continuing normal text.
+* Normal start then _italic end_.
+* `Mono start` and normal end.
+* Every style: *bold* _italic_ *_bold-italic_* `mono` normal.
+
+=== 16.3 Mixed markup in table cells
+
+[cols="1,2"]
+|===
+| Style | Example
+
+| bold | *This cell has bold text* alongside normal text.
+| italic | _This cell has italic text_ alongside normal text.
+| mono | `This cell has mono text` alongside normal text.
+|===
+
+// ─────────────────────────────────────────────────────────────────────────────
+== 17. A4 Page Size
+// ─────────────────────────────────────────────────────────────────────────────
+
+This section heading and its content are rendered at the same settings as
+the rest of the document.  To test A4 layout specifically, generate the PDF
+with `-a pdf-page-size=A4`.  All margin and content-width calculations scale
+with the page size; the A4 content area is slightly narrower and taller than
+Letter.
+
+----
+$ asciiquack -b pdf -a pdf-page-size=A4 examples/stress_test.adoc
+----
+
+The code block above tests that the layout calculation on an A4 page is
+consistent with the Letter layout demonstrated throughout this document.
