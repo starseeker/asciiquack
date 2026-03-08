@@ -66,3 +66,4 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 - Command line options: cxxopts (https://github.com/jarro2783/cxxopts)
 - PDF writing: minimal subset of libharu (https://github.com/libharu/libharu)
 - Font support: struetype fork of stb_truetype (https://github.com/starseeker/struetype)
+- PNG support: LodePNG (https://github.com/lvandeve/lodepng)
