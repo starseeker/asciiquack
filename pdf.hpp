@@ -275,9 +275,10 @@ public:
     static constexpr float MARGIN_BOTTOM = 72.0f;
 
     // ── Default typography ────────────────────────────────────────────────────
-    static constexpr float BODY_SIZE  = 11.0f;
-    static constexpr float CODE_SIZE  = 10.0f;
-    static constexpr float LINE_RATIO = 1.35f;   ///< line height = size × ratio
+    static constexpr float BODY_SIZE          = 11.0f;
+    static constexpr float CODE_SIZE          = 10.0f;
+    static constexpr float LINE_RATIO         = 1.35f;   ///< line height = size × ratio
+    static constexpr float CODE_RIGHT_PADDING = 4.0f;    ///< right padding inside code block (pt)
 
     explicit PdfLayout(minipdf::Document& doc) : doc_(doc) {
         content_w_ = doc.page_width() - MARGIN_LEFT - MARGIN_RIGHT;
@@ -474,11 +475,29 @@ public:
         std::string line;
         while (std::getline(ss, line)) {
             ensure_space(lh);
+            // Clip lines that would overflow the right margin.  Truncate
+            // characters from the end and append "..." to signal clipping.
+            float avail_w = content_w_ - indent - CODE_RIGHT_PADDING;
+            float line_w  = tw(line, minipdf::FontStyle::Mono, CODE_SIZE);
+            if (line_w > avail_w) {
+                const std::string ellipsis = "...";
+                float ell_w = tw(ellipsis, minipdf::FontStyle::Mono, CODE_SIZE);
+                while (!line.empty() &&
+                       tw(line, minipdf::FontStyle::Mono, CODE_SIZE)
+                           + ell_w > avail_w) {
+                    line.pop_back();
+                }
+                line += ellipsis;
+            }
             page_->place_text(MARGIN_LEFT + indent, cursor_y_,
                                minipdf::FontStyle::Mono, CODE_SIZE, line);
             cursor_y_ -= lh;
         }
-        cursor_y_ -= CODE_SIZE * 0.5f;
+        // Gap below the code block must be large enough that the ascenders of
+        // the following paragraph (≈ BODY_SIZE × 0.75) do not reach up into the
+        // grey background rectangle.  The minimum required is ~8.9 pt; use
+        // BODY_SIZE (11 pt) for a comfortable, visually consistent separation.
+        cursor_y_ -= BODY_SIZE;
     }
 
     // ── Horizontal rule ───────────────────────────────────────────────────────

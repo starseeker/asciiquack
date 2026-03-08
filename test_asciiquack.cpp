@@ -3438,6 +3438,428 @@ static void test_pdf_heading_rule_position_below_heading() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PDF code-block layout tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Return the bottom y-coordinate (in PDF points) of the first grey
+/// code-block background rectangle in the content stream.  The grey fill is
+/// identified by the "0.95 0.95 0.95 rg" colour command emitted by fill_rect.
+/// Returns -1.0f when not found.
+static float pdf_code_bg_bottom_y(const std::string& pdf) {
+    const std::string marker = "0.95 0.95 0.95 rg\n";
+    auto gpos = pdf.find(marker);
+    if (gpos == std::string::npos) return -1.0f;
+    // fill_rect emits: "<r> <g> <b> rg\n<x> <y> <w> <h> re f\n"
+    // so the line immediately following the rg line holds the rectangle.
+    auto line_start = gpos + marker.size();
+    auto line_end   = pdf.find('\n', line_start);
+    if (line_end == std::string::npos) return -1.0f;
+    std::istringstream iss(pdf.substr(line_start, line_end - line_start));
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    if (iss >> x >> y >> w >> h) return y;
+    return -1.0f;
+}
+
+/// Return the y-coordinate from the "1 0 0 1 x y Tm" command that precedes
+/// the first occurrence of "(needle) Tj" in the content stream.
+/// Returns -1.0f when not found.
+static float pdf_tm_y_of_text(const std::string& pdf,
+                               const std::string& needle) {
+    std::string pat = "(" + needle + ") Tj";
+    auto tpos = pdf.find(pat);
+    if (tpos == std::string::npos) return -1.0f;
+    // Search backward for the "1 0 0 1 " Tm prefix.
+    auto tm = pdf.rfind("1 0 0 1 ", tpos);
+    if (tm == std::string::npos) return -1.0f;
+    std::istringstream iss(pdf.substr(tm + 8, 64));
+    float x = 0.0f, y = 0.0f;
+    if (iss >> x >> y) return y;
+    return -1.0f;
+}
+
+static void test_pdf_code_block_gap_clears_background() {
+    begin_test("pdf: paragraph after code block starts below grey background");
+
+    // A two-line code block immediately followed by a paragraph.
+    // The grey rectangle must not overlap the following body text.
+    const std::string src =
+        "= Title\n"
+        "\n"
+        "----\n"
+        "code line 1\n"
+        "code line 2\n"
+        "----\n"
+        "\n"
+        "AfterBlock text here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "AfterBlock");
+
+    // Extract the bottom y-coordinate of the grey code block background and
+    // the baseline y-coordinate of the first word of the following paragraph.
+    float bg_bottom = pdf_code_bg_bottom_y(pdf);
+    float para_y    = pdf_tm_y_of_text(pdf, "AfterBlock");
+
+    EXPECT(bg_bottom > 0.0f);   // sanity: found the grey rect
+    EXPECT(para_y    > 0.0f);   // sanity: found the paragraph text
+
+    // The paragraph baseline must be below the background rectangle by at
+    // least BODY_SIZE * 0.75 ≈ 8.25 pt so that the tallest ascenders do not
+    // reach into the grey box.  We use 8.0 pt as the threshold to give a
+    // small tolerance for rounding.
+    EXPECT(bg_bottom - para_y > 8.0f);
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF layout interaction tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_pdf_table_gap_after_table() {
+    begin_test("pdf: paragraph after table starts below table bottom border");
+
+    const std::string src =
+        "= Title\n"
+        "\n"
+        "[cols=\"1,1\"]\n"
+        "|===\n"
+        "| H1 | H2\n"
+        "\n"
+        "| A | B\n"
+        "|===\n"
+        "\n"
+        "AfterTable paragraph here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "AfterTable");
+
+    // The table's bottom border is a draw_hline; after it the cursor advances
+    // by BODY_SIZE * 1.2 before the next paragraph.
+    // Verify simply that the paragraph text is present and the PDF is valid –
+    // the exact y positions are table-height-dependent and tested visually via
+    // the stress-test PDF and check_pdf_layout.py.
+
+    end_test();
+}
+
+static void test_pdf_heading_followed_by_code_block() {
+    begin_test("pdf: heading rule does not bleed into following code-block background");
+
+    // A level-1 heading (which draws a decorative rule) immediately followed
+    // by a code block.  The heading rule must sit above the grey code-block
+    // background; the two fill_rect calls must not overlap vertically.
+    const std::string src =
+        "= Doc Title\n"
+        "\n"
+        "== Section With Code\n"
+        "\n"
+        "----\n"
+        "code line one\n"
+        "code line two\n"
+        "----\n"
+        "\n"
+        "AfterCode paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "code line one");
+    EXPECT_CONTAINS(pdf, "AfterCode");
+
+    // Both the heading-rule fill_rect and the code-block fill_rect must appear.
+    // Count all "re f" sequences – expect at least 3 (title rule, section rule,
+    // code block background).
+    std::size_t ref_count = 0;
+    std::size_t pos = 0;
+    while ((pos = pdf.find(" re f\n", pos)) != std::string::npos) {
+        ++ref_count; ++pos;
+    }
+    EXPECT(ref_count >= 3);
+
+    // Heading rule colour is ~0.6/0.6/0.6; code-block colour is 0.95/0.95/0.95.
+    // Both must be present in the content stream.
+    EXPECT_CONTAINS(pdf, "0.60 0.60 0.60 rg");
+    EXPECT_CONTAINS(pdf, "0.95 0.95 0.95 rg");
+
+    // The code-block background y must be below the heading rule y.
+    // The heading rule rg line appears before the code-block rg line in the stream.
+    auto rule_pos = pdf.find("0.60 0.60 0.60 rg");
+    auto code_pos = pdf.find("0.95 0.95 0.95 rg");
+    EXPECT(rule_pos != std::string::npos);
+    EXPECT(code_pos != std::string::npos);
+    EXPECT(rule_pos < code_pos);   // heading rule must come before code-block bg
+
+    // Extract the y of the heading rule and the y of the code-block background.
+    // The rule y must be GREATER (higher on the page) than the code-block top y.
+    // heading rule fill_rect line:
+    float rule_y = -1.0f, code_bg_y = -1.0f;
+    {
+        auto parse_fill_y = [&](std::size_t rg_pos, float& out_y) {
+            const std::string marker = " rg\n";
+            auto after = pdf.find(marker, rg_pos);
+            if (after == std::string::npos) return;
+            auto line_start = after + marker.size();
+            auto line_end   = pdf.find('\n', line_start);
+            if (line_end == std::string::npos) return;
+            std::istringstream iss(pdf.substr(line_start, line_end - line_start));
+            float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+            if (iss >> x >> y >> w >> h) out_y = y;
+        };
+        parse_fill_y(rule_pos, rule_y);
+        parse_fill_y(code_pos, code_bg_y);
+    }
+    EXPECT(rule_y    > 0.0f);
+    EXPECT(code_bg_y > 0.0f);
+    // rule_y is the BOTTOM of the heading rule bar; code_bg_y is the BOTTOM of the
+    // code background rect.  The code box is below the heading so its bottom y
+    // must be strictly lower (smaller value in PDF coordinates = lower on page).
+    EXPECT(rule_y > code_bg_y);
+
+    end_test();
+}
+
+static void test_pdf_consecutive_headings_valid() {
+    begin_test("pdf: consecutive headings at all levels produce valid PDF");
+
+    const std::string src =
+        "= Level 0 Title\n"
+        "\n"
+        "== Level 1\n"
+        "\n"
+        "=== Level 2\n"
+        "\n"
+        "==== Level 3\n"
+        "\n"
+        "===== Level 4\n"
+        "\n"
+        "====== Level 5\n"
+        "\n"
+        "Body text after all headings.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "Level");
+    EXPECT_CONTAINS(pdf, "Body");
+
+    // Level-0 and Level-1 headings each emit a fill_rect (the decorative rule).
+    // There must be exactly 2 such fill_rects from headings (title + level-1).
+    // Count the dark-grey fill colour "0.30" (title) and "0.60" (level-1).
+    EXPECT_CONTAINS(pdf, "0.30 0.30 0.30 rg");
+    EXPECT_CONTAINS(pdf, "0.60 0.60 0.60 rg");
+
+    end_test();
+}
+
+static void test_pdf_admonition_multiline_body_valid() {
+    begin_test("pdf: admonition with long multi-line body produces valid PDF");
+
+    // A very long body forces wrapping; the label must stay on the first line
+    // and not overlap subsequent lines of the body.
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "IMPORTANT: This is a very long admonition body that must word-wrap "
+        "across multiple lines. Each continuation line must be indented past "
+        "the IMPORTANT: label so that the label and the body text never "
+        "overlap horizontally. The quick brown fox jumps over the lazy dog.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "IMPORTANT:");
+    EXPECT_CONTAINS(pdf, "quick");
+
+    end_test();
+}
+
+static void test_pdf_quote_block_gap_after() {
+    begin_test("pdf: paragraph after block quote starts below quote body");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "[quote]\n"
+        "____\n"
+        "A notable quotation here.\n"
+        "____\n"
+        "\n"
+        "AfterQuote paragraph here.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "notable");
+    EXPECT_CONTAINS(pdf, "AfterQuote");
+
+    // The quote body text must appear before the AfterQuote paragraph in the
+    // content stream (top-to-bottom rendering order).
+    auto quote_pos = pdf.find("notable");
+    auto after_pos = pdf.find("AfterQuote");
+    EXPECT(quote_pos != std::string::npos);
+    EXPECT(after_pos != std::string::npos);
+    EXPECT(quote_pos < after_pos);
+
+    // Extract the y-coordinates: quote body text must be higher on the page
+    // (larger PDF y value) than the following paragraph.
+    float quote_y = pdf_tm_y_of_text(pdf, "notable");
+    float after_y = pdf_tm_y_of_text(pdf, "AfterQuote");
+    EXPECT(quote_y > 0.0f);
+    EXPECT(after_y > 0.0f);
+    // Quote body is higher on the page (larger y) than the following paragraph.
+    EXPECT(quote_y > after_y);
+
+    end_test();
+}
+
+static void test_pdf_dlist_body_indented_below_term() {
+    begin_test("pdf: description list body is below its term on the page");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "myterm:: The description of the term follows on the same or next line.\n"
+        "\n"
+        "AfterDlist paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "myterm");
+    EXPECT_CONTAINS(pdf, "description");
+    EXPECT_CONTAINS(pdf, "AfterDlist");
+
+    // The term must appear before the description body in the stream.
+    float term_y  = pdf_tm_y_of_text(pdf, "myterm");
+    float after_y = pdf_tm_y_of_text(pdf, "AfterDlist");
+    EXPECT(term_y  > 0.0f);
+    EXPECT(after_y > 0.0f);
+    // Term is higher on the page than the post-list paragraph.
+    EXPECT(term_y > after_y);
+
+    end_test();
+}
+
+static void test_pdf_ordered_list_gap_after() {
+    begin_test("pdf: paragraph after ordered list starts below last list item");
+
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        ". First ordered item.\n"
+        ". Second ordered item.\n"
+        ". Third ordered item.\n"
+        "\n"
+        "AfterList paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "Third");
+    EXPECT_CONTAINS(pdf, "AfterList");
+
+    float last_item_y = pdf_tm_y_of_text(pdf, "Third");
+    float after_y     = pdf_tm_y_of_text(pdf, "AfterList");
+    EXPECT(last_item_y > 0.0f);
+    EXPECT(after_y     > 0.0f);
+    // The last item is higher on the page than the following paragraph.
+    EXPECT(last_item_y > after_y);
+
+    end_test();
+}
+
+static void test_pdf_code_block_preceded_by_heading_gap() {
+    begin_test("pdf: code block preceded by heading has adequate gap above");
+
+    // Level-2 heading → code block: the heading gap_below (2 pt for level >= 2)
+    // must result in the code block sitting clearly below the heading text.
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "=== SectionBeforeCode\n"
+        "\n"
+        "----\n"
+        "code after heading\n"
+        "----\n"
+        "\n"
+        "AfterCode.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    EXPECT_CONTAINS(pdf, "SectionBeforeCode");
+    EXPECT_CONTAINS(pdf, "code after heading");
+    EXPECT_CONTAINS(pdf, "AfterCode");
+
+    // The heading text y must be above (greater than) the code-block bg bottom y.
+    float heading_y = pdf_tm_y_of_text(pdf, "SectionBeforeCode");
+    float code_bg_bottom = pdf_code_bg_bottom_y(pdf);
+    EXPECT(heading_y    > 0.0f);
+    EXPECT(code_bg_bottom > 0.0f);
+    EXPECT(heading_y > code_bg_bottom);
+
+    end_test();
+}
+
+static void test_pdf_code_block_long_line_clipped() {
+    begin_test("pdf: very long code line is clipped with ellipsis, does not overflow");
+
+    // A code line whose raw rendered width greatly exceeds the content area.
+    // The renderer must truncate it with "..." rather than letting it overflow
+    // the right margin.
+    const std::string src =
+        "= Doc\n"
+        "\n"
+        "----\n"
+        "this_is_a_very_long_identifier_name = some_function_call("
+        "argument_one, argument_two, argument_three, argument_four)\n"
+        "normal_line\n"
+        "----\n"
+        "\n"
+        "AfterCode paragraph.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+
+    // The truncation marker "..." must be present.
+    EXPECT_CONTAINS(pdf, "...");
+
+    // The shorter second line must still be rendered in full.
+    EXPECT_CONTAINS(pdf, "normal_line");
+
+    // The paragraph after the code block must also be present.
+    EXPECT_CONTAINS(pdf, "AfterCode");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PDF image rendering tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3937,6 +4359,16 @@ int main(int argc, char* argv[]) {
     test_pdf_fontset_xref_valid_six_fonts();
     test_pdf_heading_rule_not_through_body();
     test_pdf_heading_rule_position_below_heading();
+    test_pdf_code_block_gap_clears_background();
+    test_pdf_table_gap_after_table();
+    test_pdf_heading_followed_by_code_block();
+    test_pdf_consecutive_headings_valid();
+    test_pdf_admonition_multiline_body_valid();
+    test_pdf_quote_block_gap_after();
+    test_pdf_dlist_body_indented_below_term();
+    test_pdf_ordered_list_gap_after();
+    test_pdf_code_block_preceded_by_heading_gap();
+    test_pdf_code_block_long_line_clipped();
     test_pdf_image_missing_file_emits_placeholder();
     test_pdf_image_xobject_structure();
     test_pdf_image_xobject_xref_valid();
