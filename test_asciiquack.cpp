@@ -6028,6 +6028,194 @@ static void test_html_verbatim_trailing_space_stripped() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// inline_scanner.hpp unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+// These tests call sub_quotes() directly so they exercise the scanner path
+// when ASCIIQUACK_USE_INLINE_SCANNER is defined, and the regex path otherwise.
+// A separate #ifdef block exercises scan_inline_quotes() directly.
+
+static void test_inline_scanner_unconstrained() {
+    begin_test("inline scanner: unconstrained markup patterns");
+
+    // **bold**
+    EXPECT_EQ(asciiquack::sub_quotes("**bold**"), "<strong>bold</strong>");
+    // __italic__
+    EXPECT_EQ(asciiquack::sub_quotes("__italic__"), "<em>italic</em>");
+    // ``mono``
+    EXPECT_EQ(asciiquack::sub_quotes("``mono``"), "<code>mono</code>");
+    // ##highlight##
+    EXPECT_EQ(asciiquack::sub_quotes("##hi##"), "<mark>hi</mark>");
+    // ^^sup^^
+    EXPECT_EQ(asciiquack::sub_quotes("^^sup^^"), "<sup>sup</sup>");
+    // ~~sub~~
+    EXPECT_EQ(asciiquack::sub_quotes("~~sub~~"), "<sub>sub</sub>");
+
+    // Multiple unconstrained spans in one string
+    EXPECT_EQ(asciiquack::sub_quotes("**a** and **b**"),
+              "<strong>a</strong> and <strong>b</strong>");
+
+    // Unconstrained with no boundary restriction – spans at start/end of word
+    EXPECT_EQ(asciiquack::sub_quotes("un**be**lievable"),
+              "un<strong>be</strong>lievable");
+
+    // Unconstrained empty-content falls through to constrained:
+    // **** → unconstrained ** fails (content would be empty), constrained matches
+    // content "**" giving <strong>**</strong>
+    EXPECT_EQ(asciiquack::sub_quotes("****"), "<strong>**</strong>");
+
+    end_test();
+}
+
+static void test_inline_scanner_constrained() {
+    begin_test("inline scanner: constrained markup patterns");
+
+    // *bold*
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*"), "<strong>bold</strong>");
+    // _italic_
+    EXPECT_EQ(asciiquack::sub_quotes("_italic_"), "<em>italic</em>");
+    // `mono`
+    EXPECT_EQ(asciiquack::sub_quotes("`mono`"), "<code>mono</code>");
+    // +legacy+
+    EXPECT_EQ(asciiquack::sub_quotes("+legacy+"), "<code>legacy</code>");
+    // #highlight# with alphanumeric content
+    EXPECT_EQ(asciiquack::sub_quotes("#hi#"), "<mark>hi</mark>");
+    // ^super^
+    EXPECT_EQ(asciiquack::sub_quotes("^sup^"), "<sup>sup</sup>");
+    // ~sub~
+    EXPECT_EQ(asciiquack::sub_quotes("~sub~"), "<sub>sub</sub>");
+
+    // No match: content starts with whitespace
+    EXPECT_EQ(asciiquack::sub_quotes("* bold*"), "* bold*");
+    // No match: content ends with whitespace
+    EXPECT_EQ(asciiquack::sub_quotes("*bold *"), "*bold *");
+
+    end_test();
+}
+
+static void test_inline_scanner_boundaries() {
+    begin_test("inline scanner: boundary conditions");
+
+    // Preceding word character must suppress constrained bold
+    EXPECT_EQ(asciiquack::sub_quotes("a*bold*b"), "a*bold*b");  // 'a' before '*'
+    // Preceding '*' suppresses constrained bold
+    EXPECT_EQ(asciiquack::sub_quotes("**"), "**");
+
+    // URL protection: '/' before '*' suppresses constrained bold (Bug #4)
+    EXPECT_EQ(asciiquack::sub_quotes("https://*host*/path"),
+              "https://*host*/path");
+    // Colon before '*' also suppresses (Bug #4)
+    EXPECT_EQ(asciiquack::sub_quotes("opt:*val*"), "opt:*val*");
+
+    // Following alphanumeric suppresses close boundary
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*only"), "*bold*only");
+
+    // Adjacent spans: close '*' followed by '_' is valid close boundary
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*_italic_"),
+              "<strong>bold</strong><em>italic</em>");
+
+    // Adjacent: _italic_ followed by *bold*
+    EXPECT_EQ(asciiquack::sub_quotes("_foo_*bar*"),
+              "<em>foo</em><strong>bar</strong>");
+
+    // Constrained #: content must start/end with alnum
+    EXPECT_EQ(asciiquack::sub_quotes("#hi#"), "<mark>hi</mark>");
+    // Non-alphanumeric start must not match constrained #
+    EXPECT_EQ(asciiquack::sub_quotes("#/#"), "#/#");
+    // Non-alphanumeric end must not match constrained #
+    EXPECT_EQ(asciiquack::sub_quotes("#a,#"), "#a,#");
+
+    // ^/~ with whitespace in content must not match
+    EXPECT_EQ(asciiquack::sub_quotes("^a b^"), "^a b^");
+    EXPECT_EQ(asciiquack::sub_quotes("~a b~"), "~a b~");
+
+    end_test();
+}
+
+static void test_inline_scanner_unconstrained_fallthrough() {
+    begin_test("inline scanner: unconstrained failure falls through to constrained");
+
+    // **bold* : unconstrained ** has no ** close; constrained * should still match
+    // (the regex pipeline also produces <strong>*bold</strong> here because
+    //  **..** fails and then *..*  matches starting at position 0)
+    EXPECT_EQ(asciiquack::sub_quotes("**bold*"),
+              "<strong>*bold</strong>");
+
+    // __italic_ : same pattern with _
+    EXPECT_EQ(asciiquack::sub_quotes("__italic_"),
+              "<em>_italic</em>");
+
+    // ^^super^ : unconstrained ^^ fails, constrained ^ matches (content = ^super)
+    EXPECT_EQ(asciiquack::sub_quotes("^^super^"),
+              "<sup>^super</sup>");
+
+    end_test();
+}
+
+#ifdef ASCIIQUACK_USE_INLINE_SCANNER
+// Direct unit tests for scan_inline_quotes() – only compiled when the
+// hand-written scanner is active.  These tests exercise internal logic
+// (e.g. the find_hash_close / find_nowhitespace_close helpers) that would
+// be invisible through the high-level HTML backend.
+static void test_inline_scanner_direct() {
+    begin_test("inline scanner: scan_inline_quotes() direct unit tests");
+
+    // All 13 pattern types
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**b**"),   "<strong>b</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__i__"),   "<em>i</em>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("``m``"),   "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("##h##"),   "<mark>h</mark>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^^s^^"),   "<sup>s</sup>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("~~u~~"),   "<sub>u</sub>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*b*"),     "<strong>b</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_i_"),     "<em>i</em>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`m`"),     "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("+m+"),     "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#h#"),     "<mark>h</mark>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^s^"),     "<sup>s</sup>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("~u~"),     "<sub>u</sub>");
+
+    // Unconstrained spans with multi-character content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**bold text**"),
+              "<strong>bold text</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__italic text__"),
+              "<em>italic text</em>");
+
+    // Multiple spans
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*a* and *b*"),
+              "<strong>a</strong> and <strong>b</strong>");
+
+    // Constrained: single-char content (regression for \S alternate)
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*x*"), "<strong>x</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_x_"), "<em>x</em>");
+
+    // Constrained: multi-word content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*some bold text*"),
+              "<strong>some bold text</strong>");
+
+    // find_hash_close: newline aborts
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#hi\n#"), "#hi\n#");
+    // find_hash_close: '#' in content: the close at position 2 would have
+    // 'b' after it (alphanumeric), so the close boundary fails → no match
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#a#b#"), "#a#b#");
+
+    // find_nowhitespace_close: tab in content aborts
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^a\tb^"), "^a\tb^");
+
+    // Unconstrained empty-content falls through to constrained:
+    // **** → unconstrained ** fails (empty content), constrained matches ** as content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("****"),   "<strong>**</strong>");
+    // Same for __: unconstrained __ fails, constrained _ matches __ as content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("____"),   "<em>__</em>");
+
+    // Pass-through of unmarked text
+    EXPECT_EQ(asciiquack::scan_inline_quotes("plain text"), "plain text");
+    EXPECT_EQ(asciiquack::scan_inline_quotes(""), "");
+
+    end_test();
+}
+#endif // ASCIIQUACK_USE_INLINE_SCANNER
+
+// ─────────────────────────────────────────────────────────────────────────────
 // re2c block scanner tests
 // ─────────────────────────────────────────────────────────────────────────────
 #ifdef ASCIIQUACK_USE_SCANNER
@@ -6645,6 +6833,16 @@ int main(int argc, char* argv[]) {
     test_html_em_dash_no_convert_option_names();
     test_html_arrow_replacements();
     test_html_verbatim_trailing_space_stripped();
+
+    // inline_scanner.hpp tests
+    std::cout << "\ninline scanner tests:\n";
+    test_inline_scanner_unconstrained();
+    test_inline_scanner_constrained();
+    test_inline_scanner_boundaries();
+    test_inline_scanner_unconstrained_fallthrough();
+#ifdef ASCIIQUACK_USE_INLINE_SCANNER
+    test_inline_scanner_direct();
+#endif
 
     // re2c block scanner tests
     std::cout << "\nre2c block scanner tests:\n";

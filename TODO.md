@@ -281,6 +281,49 @@ bash scripts/compare_brlcad.sh
 on the PCRE2 path.  A future avenue is to replace them with a hand-written
 multi-pass inline scanner that handles markup as a single DFA traversal.
 
+### Inline markup scanner (`inline_scanner.hpp`)
+
+The lookahead and boundary requirements that make inline-markup patterns
+unsuitable for re2c / lemon **are straightforwardly expressible as
+character-level boundary checks** in a hand-written scanner.
+
+**Why re2c / lemon are poor matches for inline markup:**
+
+| Requirement | Why not re2c | Why not lemon |
+|---|---|---|
+| Preceding-character boundary (`[^*\w]` before `*`) | re2c DFA has no state for the previously-consumed token | Parser grammar can, but each token's validity depends on the surrounding characters — context the LALR(1) automaton would need to thread through as attributes |
+| Following-character lookahead (`(?=[^*\w]\|$)`) | re2c supports fixed-length lookahead, but "not followed by alphanumeric or same marker" at an unknown offset requires variable lookahead | Lookahead is a parser-level concept; it would require rewriting the grammar in terms of token pairs |
+| Greedy / non-greedy content span (`\S.*?\S`) | re2c always takes the longest match; non-greedy semantics need extra states or a second scanner pass | Not a lexical concept |
+
+**What the hand-written scanner does:**
+
+`inline_scanner.hpp` implements `scan_inline_quotes()`, a single left-to-right
+pass over the input string that is a drop-in replacement for the 13-regex
+chain in `sub_quotes()`.
+
+- **"Preceding character"** is tracked via `out.back()` — the last byte
+  written to the output buffer.  This naturally includes boundary changes
+  caused by previously-emitted HTML tags (e.g. `>` after `</strong>`).
+- **"Following character" lookahead** is satisfied by inspecting `text[close+1]`
+  after finding the candidate closing marker.
+- **Non-greedy matching** is achieved by returning the *first* closing position
+  that passes all constraints.
+- The scanner handles all 13 patterns (6 unconstrained `**`, `__`, `\`\``,
+  `##`, `^^`, `~~`; 7 constrained `*`, `_`, `` ` ``, `+`, `#`, `^`, `~`) in
+  one pass, giving O(n) throughput vs. the O(13n) of the regex chain.
+
+**Build integration:**
+
+```bash
+# Enable the inline scanner:
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_INLINE_SCANNER=ON
+```
+
+This adds `ASCIIQUACK_USE_INLINE_SCANNER` to all targets.  The `sub_quotes()`
+function in `substitutors.hpp` then delegates to `scan_inline_quotes()`
+instead of running the PCRE2 regexes.  When `OFF` (default), the PCRE2 chain
+runs unchanged.
+
 ### Remaining opportunity
 
 - **`shared_ptr` → `unique_ptr`** – The AST is a strict ownership tree;

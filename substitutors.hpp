@@ -19,6 +19,9 @@
 #pragma once
 
 #include "aqregex.hpp"
+#ifdef ASCIIQUACK_USE_INLINE_SCANNER
+#  include "inline_scanner.hpp"
+#endif
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -198,7 +201,16 @@ inline std::string apply_quote_rx(
 } // namespace detail
 
 /// Apply inline quote substitutions (*bold*, _italic_, etc.).
+///
+/// When ASCIIQUACK_USE_INLINE_SCANNER is defined at compile time, this
+/// function delegates to scan_inline_quotes() from inline_scanner.hpp —
+/// a single-pass hand-written scanner that produces identical output
+/// without requiring any regex engine.  When the macro is not defined,
+/// the original 13-regex PCRE2 chain is used (default).
 [[nodiscard]] inline std::string sub_quotes(const std::string& text) {
+#ifdef ASCIIQUACK_USE_INLINE_SCANNER
+    return scan_inline_quotes(text);
+#else
     std::string out = text;
 
     // --- Unconstrained (double markers, no boundary restriction) -------------
@@ -306,6 +318,7 @@ inline std::string apply_quote_rx(
     }
 
     return out;
+#endif // ASCIIQUACK_USE_INLINE_SCANNER
 }
 
 /// Replace placeholders (inserted by extract_pass_macros) with stashed content.

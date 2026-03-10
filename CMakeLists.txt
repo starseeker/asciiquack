@@ -78,6 +78,11 @@ option(USE_LEMON "Regenerate attr_list_gen.c with lemon when found"      ON)
 # (attribute entries, list items, image/media macros, thematic breaks, and
 # section-title text extraction).  Inline markup still uses PCRE2.
 option(USE_SCANNER_PARSER "Use re2c/lemon scanner in the parsing pipeline" OFF)
+# When ON, the hand-written single-pass inline scanner from inline_scanner.hpp
+# is compiled into sub_quotes() instead of the 13-regex PCRE2 chain.
+# Produces identical output; eliminates all PCRE2 calls for inline-markup
+# recognition.  Default is OFF so existing PCRE2 behaviour is unchanged.
+option(USE_INLINE_SCANNER "Use hand-written single-pass scanner for inline quote markup" OFF)
 
 if(USE_RE2C)
     find_program(RE2C_EXECUTABLE re2c)
@@ -142,6 +147,9 @@ function(aqscanner_configure target)
     target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_SCANNER)
     if(USE_SCANNER_PARSER)
         target_compile_definitions(${target} PRIVATE ASCIIQUACK_SCANNER_PARSER)
+    endif()
+    if(USE_INLINE_SCANNER)
+        target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_INLINE_SCANNER)
     endif()
     # Suppress warnings from lemon-generated C code.
     set_source_files_properties(
@@ -211,6 +219,12 @@ if(USE_SCANNER_PARSER)
     message(STATUS "  Scanner parser: ON — re2c block scanner + lemon attr-list parser active in pipeline")
 else()
     message(STATUS "  Scanner parser: OFF — PCRE2/std::regex used throughout (default; use -DUSE_SCANNER_PARSER=ON to enable)")
+endif()
+
+if(USE_INLINE_SCANNER)
+    message(STATUS "  Inline scanner: ON — hand-written single-pass scanner replaces PCRE2 for inline quote markup")
+else()
+    message(STATUS "  Inline scanner: OFF — PCRE2/std::regex used for inline markup (default; use -DUSE_INLINE_SCANNER=ON to enable)")
 endif()
 
 # ── Helper: apply regex settings to a target ─────────────────────────────────
