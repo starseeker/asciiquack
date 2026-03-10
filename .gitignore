@@ -8,6 +8,7 @@ coverage/
 
 # C++ build artifacts
 build/
+build_*/
 build_bench/
 cmake-build-*/
 CMakeCache.txt
