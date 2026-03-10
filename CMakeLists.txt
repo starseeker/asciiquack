@@ -18,10 +18,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         -Wextra
         -Wpedantic
         -Wshadow
-        -Wnon-virtual-dtor
-        -Wold-style-cast
+        $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wold-style-cast>
         -Wcast-align
-        -Woverloaded-virtual
+        $<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
         -Wconversion
         -Wsign-conversion
         -Wdouble-promotion
@@ -51,6 +51,104 @@ endif()
 
 option(USE_PCRE2        "Use PCRE2 regex backend (faster than std::regex)"   ON)
 option(USE_SYSTEM_PCRE2 "Prefer system libpcre2-8 over embedded vendor copy" ON)
+
+# ── re2c / lemon ─────────────────────────────────────────────────────────────
+# Optional: regenerate pre-generated scanner/parser sources from their
+# originals when the respective tools are available.
+#
+#   USE_RE2C=ON  (default ON when re2c is found)
+#       → Run re2c to regenerate block_scanner_gen.h from block_scanner.re.
+#         A pre-generated copy is always available, so re2c is NEVER required.
+#
+#   USE_LEMON=ON  (default ON when lemon is found)
+#       → Run lemon to regenerate attr_list_gen.c from attr_list.lemon.
+#         A pre-generated copy is always available, so lemon is NEVER required.
+#
+# block_scanner.c and attr_list.c/.lemon provide re2c + lemon-based parsing
+# alternatives to the PCRE2 regex patterns:
+#   • block_scanner: DFA-based block-line classifier (re2c, no backreferences
+#     needed for block-level patterns except thematic break, which is handled
+#     via a small C helper).
+#   • attr_list: LALR(1) parser for AsciiDoc attribute lists (lemon).
+
+option(USE_RE2C  "Regenerate block_scanner_gen.h with re2c when found"  ON)
+option(USE_LEMON "Regenerate attr_list_gen.c with lemon when found"      ON)
+
+if(USE_RE2C)
+    find_program(RE2C_EXECUTABLE re2c)
+    if(RE2C_EXECUTABLE)
+        add_custom_command(
+            OUTPUT  "${CMAKE_SOURCE_DIR}/block_scanner_gen.h"
+            COMMAND "${RE2C_EXECUTABLE}" --no-generation-date -W
+                    -o "${CMAKE_SOURCE_DIR}/block_scanner_gen.h"
+                    "${CMAKE_SOURCE_DIR}/block_scanner.re"
+            DEPENDS "${CMAKE_SOURCE_DIR}/block_scanner.re"
+            COMMENT "re2c: regenerating block_scanner_gen.h"
+            VERBATIM
+        )
+        add_custom_target(re2c_block_scanner
+            DEPENDS "${CMAKE_SOURCE_DIR}/block_scanner_gen.h")
+        message(STATUS "  re2c found: ${RE2C_EXECUTABLE} (will regenerate block_scanner_gen.h)")
+    else()
+        message(STATUS "  re2c not found: using pre-generated block_scanner_gen.h")
+    endif()
+else()
+    message(STATUS "  re2c: disabled (USE_RE2C=OFF), using pre-generated block_scanner_gen.h")
+endif()
+
+if(USE_LEMON)
+    find_program(LEMON_EXECUTABLE lemon)
+    find_file(LEMON_TEMPLATE lempar.c
+        HINTS /usr/share/lemon /usr/local/share/lemon
+        DOC "Lemon parser template (lempar.c)")
+    if(LEMON_EXECUTABLE AND LEMON_TEMPLATE)
+        add_custom_command(
+            OUTPUT  "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
+            COMMAND "${LEMON_EXECUTABLE}"
+                    "-T${LEMON_TEMPLATE}"
+                    "-d${CMAKE_SOURCE_DIR}"
+                    "${CMAKE_SOURCE_DIR}/attr_list.lemon"
+            DEPENDS "${CMAKE_SOURCE_DIR}/attr_list.lemon"
+                    "${CMAKE_SOURCE_DIR}/attr_list_impl.h"
+            COMMENT "lemon: regenerating attr_list_gen.c"
+            VERBATIM
+        )
+        add_custom_target(lemon_attr_list
+            DEPENDS "${CMAKE_SOURCE_DIR}/attr_list_gen.c")
+        message(STATUS "  lemon found: ${LEMON_EXECUTABLE} (will regenerate attr_list_gen.c)")
+    else()
+        message(STATUS "  lemon not found or lempar.c missing: using pre-generated attr_list_gen.c")
+    endif()
+else()
+    message(STATUS "  lemon: disabled (USE_LEMON=OFF), using pre-generated attr_list_gen.c")
+endif()
+
+# Helper: apply re2c/lemon scanner sources to a target.
+# Both block_scanner.c and attr_list.c + attr_list_gen.c are always compiled;
+# the USE_RE2C / USE_LEMON options only control whether the generator tools
+# are run to refresh the pre-generated headers/sources.
+set(AQSCANNER_SRCS
+    "${CMAKE_SOURCE_DIR}/block_scanner.c"
+    "${CMAKE_SOURCE_DIR}/attr_list.c"
+    "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
+)
+function(aqscanner_configure target)
+    target_sources(${target} PRIVATE ${AQSCANNER_SRCS})
+    target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_SCANNER)
+    # Suppress warnings from lemon-generated C code.
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
+        TARGET_DIRECTORY ${target}
+        PROPERTIES COMPILE_FLAGS "-w"
+    )
+    if(RE2C_EXECUTABLE)
+        add_dependencies(${target} re2c_block_scanner)
+    endif()
+    if(LEMON_EXECUTABLE AND LEMON_TEMPLATE)
+        add_dependencies(${target} lemon_attr_list)
+    endif()
+endfunction()
+
 
 set(AQREGEX_DEFS "")
 set(AQREGEX_LIBS "")
@@ -238,6 +336,7 @@ target_compile_definitions(asciiquack PRIVATE
     ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
 )
 aqregex_configure(asciiquack)
+aqscanner_configure(asciiquack)
 ulight_configure(asciiquack)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -259,6 +358,7 @@ if(BUILD_TESTS)
         CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
     aqregex_configure(asciiquack_tests)
+    aqscanner_configure(asciiquack_tests)
     ulight_configure(asciiquack_tests)
 
     add_test(NAME asciiquack_tests COMMAND asciiquack_tests)
@@ -277,6 +377,7 @@ if(BUILD_BENCHMARK)
     target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
 	 target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
     aqregex_configure(bench_asciiquack)
+    aqscanner_configure(bench_asciiquack)
     ulight_configure(bench_asciiquack)
 endif()
 

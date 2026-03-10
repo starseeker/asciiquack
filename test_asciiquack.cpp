@@ -17,6 +17,14 @@
 #include "reader.hpp"
 #include "substitutors.hpp"
 
+// re2c block scanner and lemon attr-list parser (C API, guarded by build flag)
+#ifdef ASCIIQUACK_USE_SCANNER
+extern "C" {
+#include "block_scanner.h"
+#include "attr_list.h"
+}
+#endif
+
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
@@ -25,6 +33,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <utility>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal test harness
@@ -6017,6 +6027,312 @@ static void test_html_verbatim_trailing_space_stripped() {
     end_test();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// re2c block scanner tests
+// ─────────────────────────────────────────────────────────────────────────────
+#ifdef ASCIIQUACK_USE_SCANNER
+
+/// Helper: classify a line with the re2c scanner and return the token type.
+static AqBlockToken scanner_type(const char *line) {
+    return aq_scan_block_line(line, std::strlen(line)).type;
+}
+
+/// Helper: extract one capture from the scanned result as a std::string.
+static std::string scanner_cap(const char *line, int idx) {
+    AqBlockScanResult r = aq_scan_block_line(line, std::strlen(line));
+    if (idx < 0 || idx >= 4) { return ""; }
+    return std::string(line + r.caps[idx].off, r.caps[idx].len);
+}
+
+static void test_block_scanner_types() {
+    begin_test("re2c block scanner: line-type classification");
+
+    EXPECT_EQ(AQ_BT_BLANK,         scanner_type(""));
+    EXPECT_EQ(AQ_BT_BLANK,         scanner_type("   "));
+    EXPECT_EQ(AQ_BT_BLANK,         scanner_type("\t"));
+
+    EXPECT_EQ(AQ_BT_COMMENT,       scanner_type("// comment text"));
+    EXPECT_EQ(AQ_BT_COMMENT,       scanner_type("//"));
+    EXPECT_EQ(AQ_BT_BLOCK_COMMENT, scanner_type("////"));
+
+    EXPECT_EQ(AQ_BT_ATTR_ENTRY,    scanner_type(":foo: bar"));
+    EXPECT_EQ(AQ_BT_ATTR_ENTRY,    scanner_type(":!foo:"));
+    EXPECT_EQ(AQ_BT_ATTR_ENTRY,    scanner_type(":foo-bar: value with spaces"));
+
+    EXPECT_EQ(AQ_BT_SECTION_TITLE, scanner_type("= Title"));
+    EXPECT_EQ(AQ_BT_SECTION_TITLE, scanner_type("== Section"));
+    EXPECT_EQ(AQ_BT_SECTION_TITLE, scanner_type("=== Subsection"));
+    EXPECT_EQ(AQ_BT_SECTION_TITLE, scanner_type("====== Deepest"));
+
+    EXPECT_EQ(AQ_BT_BLOCK_ATTR,    scanner_type("[source,java]"));
+    EXPECT_EQ(AQ_BT_BLOCK_ATTR,    scanner_type("[NOTE]"));
+    EXPECT_EQ(AQ_BT_BLOCK_ATTR,    scanner_type("[id=foo,title=Bar]"));
+
+    EXPECT_EQ(AQ_BT_BLOCK_TITLE,   scanner_type(".My Title"));
+    EXPECT_EQ(AQ_BT_BLOCK_ANCHOR,  scanner_type("[[my-anchor]]"));
+    EXPECT_EQ(AQ_BT_BLOCK_ANCHOR,  scanner_type("[[id,Optional Text]]"));
+
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("----"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("===="));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("...."));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("____"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("****"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("++++"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("--"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("-------"));
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("~~~~"));
+
+    /* Thematic breaks */
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("'''"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("''''"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("---"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("- - -"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("* * *"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("_ _ _"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("***"));
+    EXPECT_EQ(AQ_BT_THEMATIC_BREAK, scanner_type("___"));
+
+    /* ---- is a delimiter, not a thematic break */
+    EXPECT_EQ(AQ_BT_DELIMITER,     scanner_type("----"));
+
+    EXPECT_EQ(AQ_BT_PAGE_BREAK,    scanner_type("<<<"));
+    EXPECT_EQ(AQ_BT_PAGE_BREAK,    scanner_type("<<<<"));
+
+    EXPECT_EQ(AQ_BT_LIST_UNORD,    scanner_type("- item"));
+    EXPECT_EQ(AQ_BT_LIST_UNORD,    scanner_type("* item"));
+    EXPECT_EQ(AQ_BT_LIST_UNORD,    scanner_type("** nested"));
+    EXPECT_EQ(AQ_BT_LIST_UNORD,    scanner_type("*** deep"));
+
+    EXPECT_EQ(AQ_BT_LIST_ORD,      scanner_type("1. item"));
+    EXPECT_EQ(AQ_BT_LIST_ORD,      scanner_type("a. item"));
+    EXPECT_EQ(AQ_BT_LIST_ORD,      scanner_type(". item"));
+    EXPECT_EQ(AQ_BT_LIST_ORD,      scanner_type(".. item"));
+
+    EXPECT_EQ(AQ_BT_LIST_DESCRIPT, scanner_type("term:: definition"));
+    EXPECT_EQ(AQ_BT_LIST_DESCRIPT, scanner_type("term;; definition"));
+    EXPECT_EQ(AQ_BT_LIST_DESCRIPT, scanner_type(":: empty-term form"));
+    EXPECT_EQ(AQ_BT_LIST_DESCRIPT, scanner_type("term::::"));
+
+    EXPECT_EQ(AQ_BT_LIST_CALLOUT,  scanner_type("<1> callout text"));
+    EXPECT_EQ(AQ_BT_LIST_CALLOUT,  scanner_type("<.> auto-callout"));
+
+    EXPECT_EQ(AQ_BT_BLOCK_IMAGE,   scanner_type("image::foo.png[Alt]"));
+    EXPECT_EQ(AQ_BT_BLOCK_MEDIA,   scanner_type("video::movie.mp4[opts]"));
+    EXPECT_EQ(AQ_BT_BLOCK_MEDIA,   scanner_type("audio::sound.ogg[opts]"));
+
+    EXPECT_EQ(AQ_BT_IFDEF,         scanner_type("ifdef::feature[]"));
+    EXPECT_EQ(AQ_BT_IFNDEF,        scanner_type("ifndef::feature[]"));
+    EXPECT_EQ(AQ_BT_ENDIF,         scanner_type("endif::feature[]"));
+    EXPECT_EQ(AQ_BT_IFEVAL,        scanner_type("ifeval::[1==1]"));
+
+    EXPECT_EQ(AQ_BT_INCLUDE,       scanner_type("include::path/file.adoc[]"));
+
+    /* Ordinary text must not match any structured token */
+    EXPECT_EQ(AQ_BT_TEXT,          scanner_type("Hello, world."));
+    EXPECT_EQ(AQ_BT_TEXT,          scanner_type("Just some prose."));
+
+    end_test();
+}
+
+static void test_block_scanner_captures() {
+    begin_test("re2c block scanner: capture extraction");
+
+    /* Attribute entry */
+    EXPECT_EQ(std::string("my-attr"),  scanner_cap(":my-attr: hello", 0));
+    EXPECT_EQ(std::string("hello"),    scanner_cap(":my-attr: hello", 1));
+    EXPECT_EQ(std::string("!attr"),    scanner_cap(":!attr:", 0));
+    EXPECT_EQ(std::string(""),         scanner_cap(":!attr:", 1)); /* no value */
+
+    /* Section title */
+    EXPECT_EQ(std::string("==="),        scanner_cap("=== My Section", 0));
+    EXPECT_EQ(std::string("My Section"), scanner_cap("=== My Section", 1));
+    EXPECT_EQ(std::string("="),          scanner_cap("= Doc Title", 0));
+    EXPECT_EQ(std::string("Doc Title"),  scanner_cap("= Doc Title", 1));
+
+    /* Block title */
+    EXPECT_EQ(std::string("My Title"),   scanner_cap(".My Title", 0));
+
+    /* Unordered list */
+    EXPECT_EQ(std::string("-"),          scanner_cap("- item text", 0));
+    EXPECT_EQ(std::string("item text"),  scanner_cap("- item text", 1));
+    EXPECT_EQ(std::string("**"),         scanner_cap("** nested", 0));
+    EXPECT_EQ(std::string("nested"),     scanner_cap("** nested", 1));
+
+    /* Ordered list */
+    EXPECT_EQ(std::string("1."),         scanner_cap("1. first item", 0));
+    EXPECT_EQ(std::string("first item"), scanner_cap("1. first item", 1));
+
+    /* Description list */
+    EXPECT_EQ(std::string("term"),       scanner_cap("term:: body text", 0));
+    EXPECT_EQ(std::string("::"),         scanner_cap("term:: body text", 1));
+    EXPECT_EQ(std::string("body text"),  scanner_cap("term:: body text", 2));
+
+    /* Callout list */
+    EXPECT_EQ(std::string("1"),          scanner_cap("<1> callout body", 0));
+    EXPECT_EQ(std::string("callout body"), scanner_cap("<1> callout body", 1));
+
+    /* Block image */
+    EXPECT_EQ(std::string("img.png"),    scanner_cap("image::img.png[Alt text]", 0));
+    EXPECT_EQ(std::string("Alt text"),   scanner_cap("image::img.png[Alt text]", 1));
+
+    /* Block media */
+    EXPECT_EQ(std::string("video"),      scanner_cap("video::clip.mp4[opts]", 0));
+    EXPECT_EQ(std::string("clip.mp4"),   scanner_cap("video::clip.mp4[opts]", 1));
+    EXPECT_EQ(std::string("opts"),       scanner_cap("video::clip.mp4[opts]", 2));
+
+    /* Conditional directives */
+    EXPECT_EQ(std::string("my-flag"),    scanner_cap("ifdef::my-flag[]", 0));
+    EXPECT_EQ(std::string("my-flag"),    scanner_cap("ifndef::my-flag[]", 0));
+    EXPECT_EQ(std::string("1==1"),       scanner_cap("ifeval::[1==1]", 0));
+
+    /* Include */
+    EXPECT_EQ(std::string("path/to/file.adoc"),
+              scanner_cap("include::path/to/file.adoc[depth=1]", 0));
+    EXPECT_EQ(std::string("depth=1"),
+              scanner_cap("include::path/to/file.adoc[depth=1]", 1));
+
+    end_test();
+}
+
+#else /* !ASCIIQUACK_USE_SCANNER */
+
+static void test_block_scanner_types() {
+    begin_test("re2c block scanner: line-type classification");
+    /* Scanner not compiled; skip. */
+    end_test();
+}
+static void test_block_scanner_captures() {
+    begin_test("re2c block scanner: capture extraction");
+    end_test();
+}
+
+#endif /* ASCIIQUACK_USE_SCANNER */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// lemon attr-list parser tests
+// ─────────────────────────────────────────────────────────────────────────────
+#ifdef ASCIIQUACK_USE_SCANNER
+
+/* Helper: parse content and collect results. */
+static std::vector<std::pair<std::string,std::string>>
+parse_attrs(const char *content) {
+    std::vector<std::pair<std::string,std::string>> out;
+    aq_parse_attr_list(
+        content, std::strlen(content),
+        [](void *ud, const char *k, size_t klen,
+           const char *v, size_t vlen) {
+            auto *vec = static_cast<std::vector<std::pair<std::string,std::string>>*>(ud);
+            vec->emplace_back(std::string(k, klen), std::string(v, vlen));
+        },
+        &out);
+    return out;
+}
+
+static void test_attr_list_positional() {
+    begin_test("lemon attr-list parser: positional attributes");
+
+    auto attrs = parse_attrs("source,java");
+    EXPECT_EQ(std::size_t(2), attrs.size());
+    if (attrs.size() >= 2) {
+        EXPECT_EQ(std::string("1"),      attrs[0].first);
+        EXPECT_EQ(std::string("source"), attrs[0].second);
+        EXPECT_EQ(std::string("2"),      attrs[1].first);
+        EXPECT_EQ(std::string("java"),   attrs[1].second);
+    }
+
+    auto single = parse_attrs("discrete");
+    EXPECT_EQ(std::size_t(1), single.size());
+    if (!single.empty()) {
+        EXPECT_EQ(std::string("1"),        single[0].first);
+        EXPECT_EQ(std::string("discrete"), single[0].second);
+    }
+
+    end_test();
+}
+
+static void test_attr_list_named() {
+    begin_test("lemon attr-list parser: named attributes");
+
+    auto attrs = parse_attrs("id=myid,title=The Title");
+    EXPECT_EQ(std::size_t(2), attrs.size());
+    if (attrs.size() >= 2) {
+        EXPECT_EQ(std::string("id"),        attrs[0].first);
+        EXPECT_EQ(std::string("myid"),      attrs[0].second);
+        EXPECT_EQ(std::string("title"),     attrs[1].first);
+        EXPECT_EQ(std::string("The Title"), attrs[1].second);
+    }
+
+    end_test();
+}
+
+static void test_attr_list_mixed() {
+    begin_test("lemon attr-list parser: mixed positional + named");
+
+    auto attrs = parse_attrs("source,java,linenums,start=10");
+    EXPECT_EQ(std::size_t(4), attrs.size());
+    if (attrs.size() >= 4) {
+        EXPECT_EQ(std::string("1"),      attrs[0].first);
+        EXPECT_EQ(std::string("source"), attrs[0].second);
+        EXPECT_EQ(std::string("2"),      attrs[1].first);
+        EXPECT_EQ(std::string("java"),   attrs[1].second);
+        EXPECT_EQ(std::string("3"),      attrs[2].first);
+        EXPECT_EQ(std::string("linenums"), attrs[2].second);
+        EXPECT_EQ(std::string("start"),  attrs[3].first);
+        EXPECT_EQ(std::string("10"),     attrs[3].second);
+    }
+
+    end_test();
+}
+
+static void test_attr_list_quoted() {
+    begin_test("lemon attr-list parser: quoted values");
+
+    auto attrs = parse_attrs("id=\"my anchor\",title=\"The Title\"");
+    EXPECT_EQ(std::size_t(2), attrs.size());
+    if (attrs.size() >= 2) {
+        EXPECT_EQ(std::string("id"),         attrs[0].first);
+        EXPECT_EQ(std::string("my anchor"),  attrs[0].second);
+        EXPECT_EQ(std::string("title"),      attrs[1].first);
+        EXPECT_EQ(std::string("The Title"),  attrs[1].second);
+    }
+
+    end_test();
+}
+
+static void test_attr_list_empty() {
+    begin_test("lemon attr-list parser: empty input");
+
+    auto attrs = parse_attrs("");
+    EXPECT_EQ(std::size_t(0), attrs.size());
+
+    end_test();
+}
+
+#else /* !ASCIIQUACK_USE_SCANNER */
+
+static void test_attr_list_positional() {
+    begin_test("lemon attr-list parser: positional attributes");
+    end_test();
+}
+static void test_attr_list_named() {
+    begin_test("lemon attr-list parser: named attributes");
+    end_test();
+}
+static void test_attr_list_mixed() {
+    begin_test("lemon attr-list parser: mixed positional + named");
+    end_test();
+}
+static void test_attr_list_quoted() {
+    begin_test("lemon attr-list parser: quoted values");
+    end_test();
+}
+static void test_attr_list_empty() {
+    begin_test("lemon attr-list parser: empty input");
+    end_test();
+}
+
+#endif /* ASCIIQUACK_USE_SCANNER */
+
 
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
@@ -6290,6 +6606,19 @@ int main(int argc, char* argv[]) {
     test_html_em_dash_no_convert_option_names();
     test_html_arrow_replacements();
     test_html_verbatim_trailing_space_stripped();
+
+    // re2c block scanner tests
+    std::cout << "\nre2c block scanner tests:\n";
+    test_block_scanner_types();
+    test_block_scanner_captures();
+
+    // lemon attr-list parser tests
+    std::cout << "\nlemon attr-list parser tests:\n";
+    test_attr_list_positional();
+    test_attr_list_named();
+    test_attr_list_mixed();
+    test_attr_list_quoted();
+    test_attr_list_empty();
 
     // Summary
     std::cout << "\n============================\n";
