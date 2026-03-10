@@ -196,6 +196,49 @@ patterns require features RE2 intentionally omits:
 
 PCRE2 is equally fast and supports the full pattern set.
 
+### Why not BRL-CAD/regex (Henry Spencer's POSIX regex)?
+
+[BRL-CAD/regex](https://github.com/BRL-CAD/regex) is Henry Spencer's classic
+POSIX ERE/BRE implementation.  It was evaluated as a potential zero-dependency
+replacement for the bundled PCRE2 amalgamation.  It cannot serve as a drop-in
+backend because it lacks several features that asciiquack's patterns require:
+
+1. **Lookahead assertions** – Neither positive `(?=…)` nor negative `(?!…)`
+   exist in POSIX ERE/BRE, and Spencer's engine does not implement them.
+   Asciiquack uses lookaheads in more than a dozen patterns (e.g. every
+   constrained-quote boundary check uses `(?=[^*a-zA-Z0-9]|$)` and the
+   description-list guard uses `(?!//[^/])`).
+
+2. **Non-greedy quantifiers** – `*?`, `+?`, and `??` are Perl/PCRE
+   extensions absent from POSIX.  All constrained inline-markup patterns
+   (bold, italic, monospace, etc.) rely on non-greedy matching.
+
+3. **Non-capturing groups** – `(?:…)` is not part of POSIX ERE.  Every
+   optional-suffix pattern in the codebase (`(?:…)?`) uses this syntax.
+
+4. **Shorthand character classes** – `\w`, `\d`, `\s` and their negations
+   (`\W`, `\D`, `\S`) are Perl extensions.  POSIX requires bracket
+   expressions such as `[[:alnum:]]` instead.  A mechanical translation
+   would be possible but would require rewriting every pattern.
+
+5. **No built-in substitution function** – The POSIX API (`regcomp`,
+   `regexec`, `regfree`) provides only match-position information.  There
+   is no equivalent of PCRE2's `pcre2_substitute` or `std::regex_replace`.
+   A replacement loop would need to be written from scratch.
+
+6. **Performance** – Spencer's engine is an NFA-based backtracking
+   interpreter with no JIT tier.  Benchmarks show it at roughly the same
+   speed as `std::regex` (GCC's libstdc++ implementation, also NFA-based),
+   well below PCRE2's ~4–5× advantage.  Adopting it would therefore provide
+   no performance benefit over the existing `std::regex` fallback.
+
+**Conclusion:** BRL-CAD/regex cannot replace PCRE2 for asciiquack.  The
+`std::regex` fallback (`-DUSE_PCRE2=OFF`) remains the appropriate
+dependency-free option, and the embedded PCRE2 amalgamation
+(`vendor/pcre2_embed.h`) remains the default zero-external-dependency fast
+path.
+
+
 ### re2c + lemon: block-level scanner and attribute-list parser
 
 AsciiDoc's **block-level grammar is regular / context-free** and therefore
