@@ -152,14 +152,17 @@ Bold, italic, and monospace text continue to use the PDF base-14 fonts
 ## Performance Notes
 
 Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
-(335 lines, ~9 KB), 10-iteration warm-up, GCC 13 `-O2`.
+(334 lines, ~8 KB), 10-iteration warm-up, GCC 13 `-O2`.
 
-| Implementation | Avg / iter | Conv / sec | Notes |
+| Implementation | Average / iter | Conv / sec | Notes |
 |---|---|---|---|
 | Ruby Asciidoctor 2.1.0 (Ruby 3.2.3) | ~2.3 ms | ~440 | reference |
 | asciiquack / `std::regex` (GCC 13) | ~3.1 ms | ~321 | baseline |
 | asciiquack / embedded PCRE2 (no JIT) | ~0.77 ms | ~1 291 | **~4× vs std::regex** – zero external dep |
-| asciiquack / system PCRE2 (JIT) | ~0.65 ms | ~1 541 | **~4.8× vs std::regex** |
+| asciiquack / system PCRE2 (JIT) | ~0.89 ms | ~1 120 | PCRE2-only baseline |
+| asciiquack / system PCRE2 (JIT) + inline scanner | ~0.79 ms | ~1 265 | **1.13×** vs PCRE2-only |
+| asciiquack / system PCRE2 (JIT) + block scanner | ~0.45 ms | ~2 210 | **1.97×** vs PCRE2-only |
+| asciiquack / system PCRE2 (JIT) + block + inline scanners | ~0.35 ms | ~2 820 | **2.53×** vs PCRE2-only |
 
 ### What was done
 
@@ -253,33 +256,41 @@ scripts/compare_brlcad.sh
 Scanner-parser output is **bit-for-bit identical** to PCRE2 output across
 the full BRL-CAD documentation corpus (both HTML5 and man-page output).
 
-**Benchmark results** (`build_regex/bench_asciiquack` vs
-`build_scanner/bench_asciiquack`, 500 iterations, Release build, system
-PCRE2 10.42 with JIT):
+**Benchmark results** (1 000 iterations, Release build, system PCRE2 10.42
+with JIT, GCC 13 `-O2`):
 
-| Input | PCRE2 (regex) | re2c/lemon (scanner) | Speedup |
+| Backend | `mdbasics.adoc` (sparse markup) | `inline_heavy.adoc` (dense markup) | Speedup |
 |---|---|---|---|
-| `mdbasics.adoc` (335 lines) | 0.82 ms/iter | 0.43 ms/iter | **1.9×** |
-| BRL-CAD corpus (532 files) | 733 µs/file | 427 µs/file | **1.7×** |
+| system PCRE2 (JIT) | 0.89 ms/iter | 1.30 ms/iter | baseline |
+| + block scanner | 0.45 ms/iter | 0.51 ms/iter | **1.97–2.55×** |
+| + inline scanner | 0.79 ms/iter | 1.13 ms/iter | **1.13–1.15×** |
+| + block + inline scanners | 0.35 ms/iter | 0.35 ms/iter | **2.53–3.73×** |
 
-The scanner eliminates all PCRE2 calls for block-level classification; only
-inline markup patterns remain on the PCRE2 path.  To build and run:
+`benchmark/sample-data/inline_heavy.adoc` (136 lines, ~6 KB) has dense
+bold, italic, monospace, super/subscript, and highlight spans throughout
+every paragraph, making it the worst case for the PCRE2 inline-markup path.
+
+The scanner eliminates all PCRE2 calls for block-level classification; the
+inline scanner (`inline_scanner.hpp`) additionally eliminates PCRE2 for
+inline quote markup.  When both are enabled, every PCRE2 call in the
+parse+convert pipeline is removed.  To build and run:
 
 ```bash
-# Scanner-parser variant:
-mkdir build_scanner && cd build_scanner
+# Block scanner only:
 cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON
+
+# Inline scanner only:
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_INLINE_SCANNER=ON
+
+# Both (maximum performance, zero PCRE2 in hot path):
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON -DUSE_INLINE_SCANNER=ON
 cmake --build . -j4
-./bench_asciiquack /path/to/brlcad/doc/asciidoc 20
+./bench_asciiquack benchmark/sample-data/mdbasics.adoc 1000
+./bench_asciiquack benchmark/sample-data/inline_heavy.adoc 1000
 
 # Corpus correctness check:
 bash scripts/compare_brlcad.sh
 ```
-
-**Inline markup:** The patterns in `substitutors.hpp` use lookaheads
-(`(?=[^*\w]|$)`) and backreferences.  These are not regular and must remain
-on the PCRE2 path.  A future avenue is to replace them with a hand-written
-multi-pass inline scanner that handles markup as a single DFA traversal.
 
 ### Inline markup scanner (`inline_scanner.hpp`)
 
@@ -311,6 +322,37 @@ chain in `sub_quotes()`.
 - The scanner handles all 13 patterns (6 unconstrained `**`, `__`, `\`\``,
   `##`, `^^`, `~~`; 7 constrained `*`, `_`, `` ` ``, `+`, `#`, `^`, `~`) in
   one pass, giving O(n) throughput vs. the O(13n) of the regex chain.
+
+**Measured performance** (1 000 iterations, Release build, system PCRE2 10.42
+with JIT, GCC 13 `-O2`):
+
+| Input | PCRE2 baseline | + inline scanner | Speedup | `sub_quotes` share |
+|---|---|---|---|---|
+| `mdbasics.adoc` (334 lines, sparse inline) | 0.89 ms | 0.79 ms | **1.13×** | ~12% of pipeline |
+| `inline_heavy.adoc` (136 lines, dense inline) | 1.30 ms | 1.13 ms | **1.15×** | ~13% of pipeline |
+
+The "sub_quotes share" column is derived from `(baseline − scanner) / baseline`,
+which is the fraction of total pipeline time that was spent in `sub_quotes()`.
+On typical documentation the inline-substitution step accounts for 12–13% of
+total parse+convert time; it is not the dominant cost.
+
+**Why the end-to-end gain is smaller than the theoretical 13×:**
+
+The inline scanner makes a single O(n) pass; the PCRE2 chain makes 13 passes.
+In pure inline-text micro-benchmarks the scanner is ~10–12× faster.  In full
+end-to-end benchmarks the gain is smaller because:
+
+1. `sub_quotes()` accounts for only 12–13% of total pipeline time.
+2. Other stages (parsing, attribute resolution, macro substitution, output
+   serialisation, shared-ptr overhead) dominate.
+3. PCRE2 with JIT is itself very fast; the single PCRE2 call overhead for
+   each of the 13 patterns is low when the input string is short (one
+   paragraph or one list-item body).
+
+The inline scanner is most valuable when combined with the block-level scanner
+(`USE_SCANNER_PARSER=ON`), which removes the larger PCRE2 cost at block level.
+Together they yield a **2.53–3.73× speedup** and eliminate every PCRE2 call
+in the hot path.
 
 **Build integration:**
 
