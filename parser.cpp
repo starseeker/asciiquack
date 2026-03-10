@@ -25,6 +25,15 @@
 #include <stdexcept>
 #include <unordered_set>
 
+// When the scanner-parser is enabled, include the re2c / lemon C headers.
+// These are compiled as C, so they must be wrapped in extern "C".
+#ifdef ASCIIQUACK_SCANNER_PARSER
+extern "C" {
+#include "block_scanner.h"
+#include "attr_list.h"
+}
+#endif
+
 namespace asciiquack {
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -104,6 +113,16 @@ std::optional<DelimiterInfo> classify_delimiter(std::string_view line) noexcept 
 /// {name, value}.  Returns nullopt otherwise.
 std::optional<std::pair<std::string,std::string>>
 try_parse_attribute_entry(const std::string& line) {
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
+    if (r.type != AQ_BT_ATTR_ENTRY) { return std::nullopt; }
+    std::string name(line.data() + r.caps[0].off, r.caps[0].len);
+    std::string value = r.caps[1].len
+        ? std::string(line.data() + r.caps[1].off, r.caps[1].len) : "";
+    trim(name);
+    trim(value);
+    return std::make_pair(std::move(name), std::move(value));
+#else
     // Pattern: :name: optional-value
     //          :!name: (unset)
     static const aqrx::regex rx(R"(^:(!?[\w][\w\-' ]*):(?:[ \t]+(.*))?$)",
@@ -119,6 +138,7 @@ try_parse_attribute_entry(const std::string& line) {
     // Trailing ' \' continuation is not handled here (multi-line attributes);
     // a single-line value is sufficient for the initial translation.
     return std::make_pair(std::move(name), std::move(value));
+#endif
 }
 
 // ── Block attribute line recognition ──────────────────────────────────────────
@@ -148,17 +168,29 @@ parse_attribute_list(const std::string& line) {
     std::unordered_map<std::string, std::string> result;
     if (line.size() < 2) { return result; }
 
-    // Strip outer [ ] (possibly [[...]])
-    std::string inner;
+    // Handle [[anchor,reftext]] specially – same in both paths
     if (line.size() >= 4 && line[0] == '[' && line[1] == '[') {
-        // [[anchor,reftext]]
-        inner = line.substr(2, line.size() - 4);
+        std::string inner = line.substr(2, line.size() - 4);
         result["anchor"] = inner;
         return result;
     }
-    inner = line.substr(1, line.size() - 2);
+
+    // Strip outer [ ]
+    std::string inner = line.substr(1, line.size() - 2);
     if (inner.empty()) { return result; }
 
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    // Delegate to the lemon-generated LALR(1) attr-list parser.
+    aq_parse_attr_list(
+        inner.c_str(), inner.size(),
+        [](void *ud, const char *k, std::size_t klen,
+           const char *v, std::size_t vlen) {
+            auto& m = *static_cast<std::unordered_map<std::string,std::string>*>(ud);
+            m[std::string(k, klen)] = std::string(v, vlen);
+        },
+        &result);
+    return result;
+#else
     // Split on commas (respecting quoted values)
     std::vector<std::string> parts;
     std::string cur;
@@ -196,6 +228,7 @@ parse_attribute_list(const std::string& line) {
     }
 
     return result;
+#endif
 }
 
 // ── List marker detection ──────────────────────────────────────────────────────
@@ -209,6 +242,35 @@ struct ListMatch {
 };
 
 std::optional<ListMatch> match_list_item(const std::string& line) {
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    // Guard: exclude table rows (lines starting with '|').
+    if (!line.empty() && line[0] == '|') { return std::nullopt; }
+
+    AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
+
+    // Helper: extract one scanner capture as std::string.
+    auto cap = [&](int i) -> std::string {
+        if (r.caps[i].len == 0) { return {}; }
+        return std::string(line.data() + r.caps[i].off, r.caps[i].len);
+    };
+
+    switch (r.type) {
+        case AQ_BT_LIST_UNORD:
+            return ListMatch{ListType::Unordered, cap(0), cap(1)};
+        case AQ_BT_LIST_ORD:
+            return ListMatch{ListType::Ordered, cap(0), cap(1)};
+        case AQ_BT_LIST_DESCRIPT: {
+            // caps[0]=term (trimmed), caps[1]=separator, caps[2]=body
+            std::string term = cap(0);
+            trim(term);  // defensive: scanner already skips leading WS
+            return ListMatch{ListType::Description, cap(1), cap(2), std::move(term)};
+        }
+        case AQ_BT_LIST_CALLOUT:
+            return ListMatch{ListType::Callout, cap(0), cap(1)};
+        default:
+            return std::nullopt;
+    }
+#else
     // Unordered: optional leading whitespace, then - or * (1-5) or • (U+2022)
     {
         static const aqrx::regex rx(
@@ -262,6 +324,7 @@ std::optional<ListMatch> match_list_item(const std::string& line) {
         }
     }
     return std::nullopt;
+#endif
 }
 
 // ── Image macro detection ──────────────────────────────────────────────────────
@@ -273,6 +336,16 @@ struct ImageMacro {
 };
 
 std::optional<ImageMacro> match_block_image(const std::string& line) {
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
+    if (r.type != AQ_BT_BLOCK_IMAGE) { return std::nullopt; }
+    ImageMacro img;
+    img.target = std::string(line.data() + r.caps[0].off, r.caps[0].len);
+    std::string attr_str = "[" + std::string(line.data() + r.caps[1].off, r.caps[1].len) + "]";
+    img.attrs  = parse_attribute_list(attr_str);
+    img.alt    = img.attrs.count("1") ? img.attrs["1"] : img.target;
+    return img;
+#else
     static const aqrx::regex rx(
         R"(^image::(\S[^\[]*)\[(.*)\]$)",
         aqrx::ECMAScript | aqrx::optimize);
@@ -284,6 +357,7 @@ std::optional<ImageMacro> match_block_image(const std::string& line) {
     img.attrs  = parse_attribute_list(attr_str);
     img.alt    = img.attrs.count("1") ? img.attrs["1"] : img.target;
     return img;
+#endif
 }
 
 // ── Video / audio macro detection ────────────────────────────────────────────
@@ -295,6 +369,17 @@ struct MediaMacro {
 };
 
 std::optional<MediaMacro> match_block_media(const std::string& line) {
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
+    if (r.type != AQ_BT_BLOCK_MEDIA) { return std::nullopt; }
+    MediaMacro mm;
+    std::string mtype(line.data() + r.caps[0].off, r.caps[0].len);
+    mm.context = (mtype == "video") ? BlockContext::Video : BlockContext::Audio;
+    mm.target  = std::string(line.data() + r.caps[1].off, r.caps[1].len);
+    std::string attr_str = "[" + std::string(line.data() + r.caps[2].off, r.caps[2].len) + "]";
+    mm.attrs   = parse_attribute_list(attr_str);
+    return mm;
+#else
     static const aqrx::regex rx(
         R"(^(video|audio)::(\S[^\[]*)\[(.*)\]$)",
         aqrx::ECMAScript | aqrx::optimize);
@@ -306,6 +391,7 @@ std::optional<MediaMacro> match_block_media(const std::string& line) {
     std::string attr_str = "[" + m[3].str() + "]";
     mm.attrs   = parse_attribute_list(attr_str);
     return mm;
+#endif
 }
 
 // ── Conditional preprocessing helpers ────────────────────────────────────────
@@ -544,6 +630,11 @@ void handle_include(const std::string& line, Reader& reader, Document& doc) {
 // ── Thematic break / page break detection ────────────────────────────────────
 
 bool is_thematic_break(const std::string& line) noexcept {
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    // aq_scan_block_line() calls is_thematic_break() in C before the DFA,
+    // so this is a direct delegation with no duplicate work.
+    return aq_scan_block_line(line.c_str(), line.size()).type == AQ_BT_THEMATIC_BREAK;
+#else
     // ''' (three or more single-quotes)
     if (line.size() >= 3) {
         bool all_apos = true;
@@ -554,6 +645,7 @@ bool is_thematic_break(const std::string& line) noexcept {
     static const aqrx::regex rx(R"(^ {0,3}([-*_])( *)\1\2\1$)",
                                 aqrx::ECMAScript | aqrx::optimize);
     return aqrx::regex_match(line, rx);
+#endif
 }
 
 bool is_page_break(const std::string& line) noexcept {
@@ -982,6 +1074,19 @@ int Parser::section_level(const std::string& line) {
 
 std::string Parser::section_title_text(const std::string& line) {
     if (line.empty() || line[0] != '=') { return line; }
+#ifdef ASCIIQUACK_SCANNER_PARSER
+    // Use the scanner's capture which already trims the setext marker.
+    AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
+    if (r.type == AQ_BT_SECTION_TITLE && r.caps[1].len > 0) {
+        return std::string(line.data() + r.caps[1].off, r.caps[1].len);
+    }
+    // Fall back for setext-style (two-line) titles where the scanner sees
+    // only the first line (not a section title line by itself).
+    std::size_t i = 0;
+    while (i < line.size() && line[i] == '=') { ++i; }
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) { ++i; }
+    return line.substr(i);
+#else
     std::size_t i = 0;
     while (i < line.size() && line[i] == '=') { ++i; }
     // Skip whitespace after '='
@@ -992,6 +1097,7 @@ std::string Parser::section_title_text(const std::string& line) {
                                         aqrx::ECMAScript | aqrx::optimize);
     text = aqrx::regex_replace(text, trailing_rx, "");
     return text;
+#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

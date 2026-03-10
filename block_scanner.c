@@ -236,8 +236,12 @@ static AqBlockScanResult extract_block_anchor(const char *line, size_t len)
 
     const char *p  = line + 2;  /* skip "[[" */
     const char *pe = line + len;
-    if (len >= 2 && pe[-1] == ']') { --pe; }
-    if (pe > p && *pe == ']') { --pe; }  /* second ']' */
+    /* Strip the closing "]]".  The re2c DFA guarantees len >= 6 and that the
+     * last two bytes before the NUL sentinel are "]]", so both checks succeed
+     * in practice.  The pe > p guard prevents underflow on pathologically
+     * short inputs. */
+    if (len >= 2 && pe[-1] == ']') { --pe; }  /* strip outer ']' */
+    if (pe > p  && pe[-1] == ']') { --pe; }   /* strip inner ']' */
 
     /* Split on first ',' */
     const char *comma = (const char*)memchr(p, ',', (size_t)(pe - p));

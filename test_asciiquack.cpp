@@ -6308,6 +6308,37 @@ static void test_attr_list_empty() {
     end_test();
 }
 
+static void test_attr_list_positional_spaces() {
+    // Unquoted positional values may contain spaces: [A photo] → 1="A photo"
+    // This mirrors the PCRE2 path which splits only on commas.
+    begin_test("lemon attr-list parser: unquoted positional value with spaces");
+
+    auto attrs = parse_attrs("A photo");
+    EXPECT_EQ(std::size_t(1), attrs.size());
+    if (!attrs.empty()) {
+        EXPECT_EQ(std::string("1"),       attrs[0].first);
+        EXPECT_EQ(std::string("A photo"), attrs[0].second);
+    }
+
+    end_test();
+}
+
+static void test_attr_list_multi_positional_with_spaces() {
+    // [quote, Mike Muuss] → 1=quote, 2="Mike Muuss"
+    begin_test("lemon attr-list parser: multi-positional with spaces");
+
+    auto attrs = parse_attrs("quote, Mike Muuss");
+    EXPECT_EQ(std::size_t(2), attrs.size());
+    if (attrs.size() >= 2) {
+        EXPECT_EQ(std::string("1"),          attrs[0].first);
+        EXPECT_EQ(std::string("quote"),      attrs[0].second);
+        EXPECT_EQ(std::string("2"),          attrs[1].first);
+        EXPECT_EQ(std::string("Mike Muuss"), attrs[1].second);
+    }
+
+    end_test();
+}
+
 #else /* !ASCIIQUACK_USE_SCANNER */
 
 static void test_attr_list_positional() {
@@ -6328,6 +6359,14 @@ static void test_attr_list_quoted() {
 }
 static void test_attr_list_empty() {
     begin_test("lemon attr-list parser: empty input");
+    end_test();
+}
+static void test_attr_list_positional_spaces() {
+    begin_test("lemon attr-list parser: unquoted positional value with spaces");
+    end_test();
+}
+static void test_attr_list_multi_positional_with_spaces() {
+    begin_test("lemon attr-list parser: multi-positional with spaces");
     end_test();
 }
 
@@ -6619,6 +6658,8 @@ int main(int argc, char* argv[]) {
     test_attr_list_mixed();
     test_attr_list_quoted();
     test_attr_list_empty();
+    test_attr_list_positional_spaces();
+    test_attr_list_multi_positional_with_spaces();
 
     // Summary
     std::cout << "\n============================\n";

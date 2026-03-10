@@ -95,15 +95,22 @@ static AqAttrLex aq_attr_lex(const char **pp, const char *pe, int in_value)
         r.tok.len = (int)(end - start);
         *pp = p;
     } else {
-        /* Key mode: word ends at ',', '=', '"', or whitespace. */
+        /* Key mode: word ends at ',', '=', or '"'.
+         * Spaces are intentionally NOT treated as delimiters here —
+         * unquoted positional values may contain spaces, e.g. [A photo] or
+         * [quote, Mike Muuss].  This matches the PCRE2 behaviour where
+         * commas are the only separator.
+         * Trailing whitespace is trimmed to match "key = value" handling. */
         const char *start = p;
-        while (p < pe && *p != ',' && *p != '=' && *p != '"' &&
-               *p != ' ' && *p != '\t') {
-            ++p;
+        while (p < pe && *p != ',' && *p != '=' && *p != '"') { ++p; }
+        /* Trim trailing whitespace */
+        const char *end = p;
+        while (end > start && (*(end - 1) == ' ' || *(end - 1) == '\t')) {
+            --end;
         }
         r.type    = AQ_TOK_WORD;
         r.tok.s   = start;
-        r.tok.len = (int)(p - start);
+        r.tok.len = (int)(end - start);
         *pp = p;
     }
     return r;

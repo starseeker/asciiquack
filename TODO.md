@@ -232,9 +232,49 @@ fully amenable to re2c and lemon:
   CMake adds custom commands to regenerate the pre-generated files from their
   sources whenever the sources change.
 
-- Both new C translation units are compiled unconditionally as part of every
-  target; the `ASCIIQUACK_USE_SCANNER` definition gates the test helpers and
-  the `#include` of the C headers from C++ code.
+- The scanner is compiled into every build unconditionally.  The
+  `ASCIIQUACK_USE_SCANNER` definition gates the test helpers and the
+  `#include` of the C headers from C++ code.
+
+- **`USE_SCANNER_PARSER=ON`** wires the scanner and lemon parser into the hot
+  path: `try_parse_attribute_entry`, `match_list_item`, `match_block_image`,
+  `match_block_media`, `is_thematic_break`, `parse_attribute_list`, and
+  `section_title_text` all delegate to the scanner instead of PCRE2.
+  Default is OFF so existing PCRE2 behavior is unchanged.
+
+**Corpus validation against BRL-CAD documentation (532 .adoc files):**
+
+```
+scripts/compare_brlcad.sh
+  Identical:     532 / 532
+  Differing:     0
+```
+
+Scanner-parser output is **bit-for-bit identical** to PCRE2 output across
+the full BRL-CAD documentation corpus (both HTML5 and man-page output).
+
+**Benchmark results** (`build_regex/bench_asciiquack` vs
+`build_scanner/bench_asciiquack`, 500 iterations, Release build, system
+PCRE2 10.42 with JIT):
+
+| Input | PCRE2 (regex) | re2c/lemon (scanner) | Speedup |
+|---|---|---|---|
+| `mdbasics.adoc` (335 lines) | 0.82 ms/iter | 0.43 ms/iter | **1.9×** |
+| BRL-CAD corpus (532 files) | 733 µs/file | 427 µs/file | **1.7×** |
+
+The scanner eliminates all PCRE2 calls for block-level classification; only
+inline markup patterns remain on the PCRE2 path.  To build and run:
+
+```bash
+# Scanner-parser variant:
+mkdir build_scanner && cd build_scanner
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON
+cmake --build . -j4
+./bench_asciiquack /path/to/brlcad/doc/asciidoc 20
+
+# Corpus correctness check:
+bash scripts/compare_brlcad.sh
+```
 
 **Inline markup:** The patterns in `substitutors.hpp` use lookaheads
 (`(?=[^*\w]|$)`) and backreferences.  These are not regular and must remain

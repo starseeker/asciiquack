@@ -73,6 +73,11 @@ option(USE_SYSTEM_PCRE2 "Prefer system libpcre2-8 over embedded vendor copy" ON)
 
 option(USE_RE2C  "Regenerate block_scanner_gen.h with re2c when found"  ON)
 option(USE_LEMON "Regenerate attr_list_gen.c with lemon when found"      ON)
+# When ON, the re2c block scanner and lemon attr-list parser are wired into
+# the parser's hot path, replacing PCRE2 for all block-level classification
+# (attribute entries, list items, image/media macros, thematic breaks, and
+# section-title text extraction).  Inline markup still uses PCRE2.
+option(USE_SCANNER_PARSER "Use re2c/lemon scanner in the parsing pipeline" OFF)
 
 if(USE_RE2C)
     find_program(RE2C_EXECUTABLE re2c)
@@ -135,6 +140,9 @@ set(AQSCANNER_SRCS
 function(aqscanner_configure target)
     target_sources(${target} PRIVATE ${AQSCANNER_SRCS})
     target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_SCANNER)
+    if(USE_SCANNER_PARSER)
+        target_compile_definitions(${target} PRIVATE ASCIIQUACK_SCANNER_PARSER)
+    endif()
     # Suppress warnings from lemon-generated C code.
     set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
@@ -197,6 +205,12 @@ if(USE_PCRE2)
     endif()
 else()
     message(STATUS "  Regex backend: std::regex (USE_PCRE2=OFF)")
+endif()
+
+if(USE_SCANNER_PARSER)
+    message(STATUS "  Scanner parser: ON — re2c block scanner + lemon attr-list parser active in pipeline")
+else()
+    message(STATUS "  Scanner parser: OFF — PCRE2/std::regex used throughout (default; use -DUSE_SCANNER_PARSER=ON to enable)")
 endif()
 
 # ── Helper: apply regex settings to a target ─────────────────────────────────
