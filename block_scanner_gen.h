@@ -136,82 +136,12 @@ yy2:
 	yych = *(YYMARKER = ++p);
 	if (yych >= 0x01) goto yy25;
 yy3:
-#line 179 "block_scanner.re"
+#line 177 "block_scanner.re"
 	{ return AQ_BT_TEXT; }
 #line 142 "block_scanner_gen.h"
 yy4:
 	yych = *(YYMARKER = ++p);
-	switch (yych) {
-		case 0x00:
-		case '\t':
-		case ' ':
-		case '*':
-		case '-':
-		case '.':
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9':
-		case 'A':
-		case 'B':
-		case 'C':
-		case 'D':
-		case 'E':
-		case 'F':
-		case 'G':
-		case 'H':
-		case 'I':
-		case 'J':
-		case 'K':
-		case 'L':
-		case 'M':
-		case 'N':
-		case 'O':
-		case 'P':
-		case 'Q':
-		case 'R':
-		case 'S':
-		case 'T':
-		case 'U':
-		case 'V':
-		case 'W':
-		case 'X':
-		case 'Y':
-		case 'Z':
-		case 'a':
-		case 'b':
-		case 'c':
-		case 'd':
-		case 'e':
-		case 'f':
-		case 'g':
-		case 'h':
-		case 'i':
-		case 'j':
-		case 'k':
-		case 'l':
-		case 'm':
-		case 'n':
-		case 'o':
-		case 'p':
-		case 'q':
-		case 'r':
-		case 's':
-		case 't':
-		case 'u':
-		case 'v':
-		case 'w':
-		case 'x':
-		case 'y':
-		case 'z': goto yy30;
-		default: goto yy3;
-	}
+	goto yy30;
 yy5:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
@@ -266,14 +196,14 @@ yy10:
 		case '6':
 		case '7':
 		case '8':
-		case '9': goto yy47;
+		case '9': goto yy34;
 		default: goto yy25;
 	}
 yy11:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case '!': goto yy48;
+		case '!': goto yy47;
 		case '0':
 		case '1':
 		case '2':
@@ -336,22 +266,22 @@ yy11:
 		case 'w':
 		case 'x':
 		case 'y':
-		case 'z': goto yy49;
-		case ':': goto yy50;
+		case 'z': goto yy48;
+		case ':': goto yy49;
 		default: goto yy25;
 	}
 yy12:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ';': goto yy51;
+		case ';': goto yy50;
 		default: goto yy25;
 	}
 yy13:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case '.': goto yy52;
+		case '.': goto yy51;
 		case '0':
 		case '1':
 		case '2':
@@ -361,8 +291,8 @@ yy13:
 		case '6':
 		case '7':
 		case '8':
-		case '9': goto yy53;
-		case '<': goto yy54;
+		case '9': goto yy52;
+		case '<': goto yy53;
 		default: goto yy25;
 	}
 yy14:
@@ -370,101 +300,98 @@ yy14:
 	switch (yych) {
 		case 0x00: goto yy3;
 		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy56;
+		case ' ': goto yy54;
+		case '=': goto yy55;
 		default: goto yy25;
 	}
 yy15:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy57;
-		case '.': goto yy58;
+		case '.': goto yy56;
 		default: goto yy25;
 	}
 yy16:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy59;
-		case '.': goto yy58;
+		case ')': goto yy57;
+		case '.': goto yy56;
 		case 'I':
 		case 'V':
 		case 'X':
 		case 'i':
 		case 'v':
-		case 'x': goto yy60;
+		case 'x': goto yy58;
 		default: goto yy25;
 	}
 yy17:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case '[': goto yy65;
+		case '[': goto yy63;
 		case ']': goto yy24;
-		default: goto yy62;
+		default: goto yy60;
 	}
 yy18:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case '_': goto yy66;
+		case '_': goto yy64;
 		default: goto yy25;
 	}
 yy19:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy57;
-		case '.': goto yy58;
-		case 'u': goto yy67;
+		case '.': goto yy56;
+		case 'u': goto yy65;
 		default: goto yy25;
 	}
 yy20:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy57;
-		case '.': goto yy58;
-		case 'n': goto yy68;
+		case '.': goto yy56;
+		case 'n': goto yy66;
 		default: goto yy25;
 	}
 yy21:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy59;
-		case '.': goto yy58;
+		case ')': goto yy57;
+		case '.': goto yy56;
 		case 'I':
 		case 'V':
 		case 'X':
 		case 'i':
 		case 'v':
-		case 'x': goto yy60;
-		case 'f': goto yy69;
-		case 'm': goto yy70;
-		case 'n': goto yy71;
+		case 'x': goto yy58;
+		case 'f': goto yy67;
+		case 'm': goto yy68;
+		case 'n': goto yy69;
 		default: goto yy25;
 	}
 yy22:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case ')': goto yy59;
-		case '.': goto yy58;
+		case ')': goto yy57;
+		case '.': goto yy56;
 		case 'I':
 		case 'V':
 		case 'X':
 		case 'v':
-		case 'x': goto yy60;
-		case 'i': goto yy72;
+		case 'x': goto yy58;
+		case 'i': goto yy70;
 		default: goto yy25;
 	}
 yy23:
 	yych = *(YYMARKER = ++p);
 	switch (yych) {
 		case 0x00: goto yy3;
-		case '~': goto yy73;
+		case '~': goto yy71;
 		default: goto yy25;
 	}
 yy24:
@@ -483,7 +410,7 @@ yy27:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy74;
+		case ':': goto yy72;
 		case ';': goto yy28;
 		default: goto yy24;
 	}
@@ -492,7 +419,7 @@ yy28:
 	switch (yych) {
 		case 0x00: goto yy26;
 		case ':': goto yy27;
-		case ';': goto yy75;
+		case ';': goto yy73;
 		default: goto yy24;
 	}
 yy29:
@@ -567,132 +494,35 @@ yy30:
 		case 'i':
 		case 'v':
 		case 'x': goto yy36;
-		default: goto yy26;
+		default: goto yy24;
 	}
 yy31:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
 		case ' ': goto yy37;
-		case '*': goto yy76;
-		default: goto yy26;
+		case '*': goto yy74;
+		default: goto yy25;
 	}
 yy32:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
 		case ' ': goto yy40;
-		default: goto yy26;
+		default: goto yy25;
 	}
 yy33:
 	yych = *++p;
 	switch (yych) {
+		case 0x00: goto yy26;
 		case '\t':
 		case ' ': goto yy43;
-		case '.': goto yy77;
-		default: goto yy26;
+		case '.': goto yy33;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		default: goto yy24;
 	}
 yy34:
-	yych = *++p;
-	switch (yych) {
-		case '.': goto yy78;
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9': goto yy34;
-		default: goto yy26;
-	}
-yy35:
-	yych = *++p;
-	switch (yych) {
-		case ')': goto yy79;
-		case '.': goto yy80;
-		default: goto yy26;
-	}
-yy36:
-	yych = *++p;
-	switch (yych) {
-		case '.': goto yy80;
-		default: goto yy83;
-	}
-yy37:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy37;
-		default: goto yy84;
-	}
-yy38:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy85;
-		default: goto yy25;
-	}
-yy39:
-	yych = *++p;
-	switch (yych) {
-		case '+': goto yy86;
-		default: goto yy25;
-	}
-yy40:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy40;
-		default: goto yy87;
-	}
-yy41:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy88;
-		case '-': goto yy89;
-		default: goto yy25;
-	}
-yy42:
-	yych = *++p;
-	if (yych <= 0x00) goto yy90;
-	goto yy42;
-yy43:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy43;
-		default: goto yy91;
-	}
-yy44:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy92;
-		default: goto yy25;
-	}
-yy45:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy93;
-		case '/': goto yy95;
-		default: goto yy94;
-	}
-yy46:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy96;
-		default: goto yy25;
-	}
-yy47:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
@@ -706,12 +536,102 @@ yy47:
 		case '6':
 		case '7':
 		case '8':
-		case '9': goto yy47;
+		case '9': goto yy34;
 		case ':': goto yy27;
 		case ';': goto yy28;
 		default: goto yy24;
 	}
-yy48:
+yy35:
+	yych = *++p;
+	switch (yych) {
+		case '.': goto yy56;
+		default: goto yy25;
+	}
+yy36:
+	yych = *++p;
+	switch (yych) {
+		case ')': goto yy57;
+		case '.': goto yy56;
+		case 'I':
+		case 'V':
+		case 'X':
+		case 'i':
+		case 'v':
+		case 'x': goto yy58;
+		default: goto yy25;
+	}
+yy37:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy37;
+		default: goto yy75;
+	}
+yy38:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy37;
+		case '*': goto yy76;
+		default: goto yy25;
+	}
+yy39:
+	yych = *++p;
+	switch (yych) {
+		case '+': goto yy77;
+		default: goto yy25;
+	}
+yy40:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy40;
+		default: goto yy78;
+	}
+yy41:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy79;
+		case '-': goto yy80;
+		default: goto yy25;
+	}
+yy42:
+	yych = *++p;
+	if (yych <= 0x00) goto yy81;
+	goto yy42;
+yy43:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy43;
+		default: goto yy82;
+	}
+yy44:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy43;
+		case '.': goto yy83;
+		default: goto yy25;
+	}
+yy45:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy84;
+		case '/': goto yy86;
+		default: goto yy85;
+	}
+yy46:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy87;
+		default: goto yy25;
+	}
+yy47:
 	yych = *++p;
 	switch (yych) {
 		case '0':
@@ -776,10 +696,10 @@ yy48:
 		case 'w':
 		case 'x':
 		case 'y':
-		case 'z': goto yy49;
+		case 'z': goto yy48;
 		default: goto yy25;
 	}
-yy49:
+yy48:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
@@ -848,36 +768,36 @@ yy49:
 		case 'w':
 		case 'x':
 		case 'y':
-		case 'z': goto yy49;
-		case ':': goto yy97;
+		case 'z': goto yy48;
+		case ':': goto yy88;
 		case ';': goto yy28;
 		default: goto yy24;
+	}
+yy49:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy89;
+		case '\t':
+		case ' ': goto yy90;
+		case ':': goto yy91;
+		default: goto yy25;
 	}
 yy50:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy98;
+		case 0x00: goto yy92;
 		case '\t':
-		case ' ': goto yy99;
-		case ':': goto yy100;
+		case ' ': goto yy93;
+		case ';': goto yy73;
 		default: goto yy25;
 	}
 yy51:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy101;
-		case '\t':
-		case ' ': goto yy102;
-		case ';': goto yy75;
+		case '>': goto yy94;
 		default: goto yy25;
 	}
 yy52:
-	yych = *++p;
-	switch (yych) {
-		case '>': goto yy103;
-		default: goto yy25;
-	}
-yy53:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
@@ -890,60 +810,53 @@ yy53:
 		case '6':
 		case '7':
 		case '8':
-		case '9': goto yy53;
+		case '9': goto yy52;
 		case ':': goto yy27;
 		case ';': goto yy28;
-		case '>': goto yy103;
+		case '>': goto yy94;
 		default: goto yy24;
+	}
+yy53:
+	yych = *++p;
+	switch (yych) {
+		case '<': goto yy95;
+		default: goto yy25;
 	}
 yy54:
 	yych = *++p;
 	switch (yych) {
-		case '<': goto yy104;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy54;
+		default: goto yy96;
 	}
 yy55:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
 		case '\t':
-		case ' ': goto yy55;
-		default: goto yy105;
+		case ' ': goto yy54;
+		case '=': goto yy97;
+		default: goto yy25;
 	}
 yy56:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy106;
+		case ' ': goto yy98;
 		default: goto yy25;
 	}
 yy57:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
-		case ' ': goto yy107;
+		case ' ': goto yy99;
 		default: goto yy25;
 	}
 yy58:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy108;
-		default: goto yy25;
-	}
-yy59:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy109;
-		default: goto yy25;
-	}
-yy60:
-	yych = *++p;
-	switch (yych) {
 		case 0x00: goto yy26;
-		case ')': goto yy59;
+		case ')': goto yy57;
 		case ':': goto yy27;
 		case ';': goto yy28;
 		case 'I':
@@ -951,38 +864,38 @@ yy60:
 		case 'X':
 		case 'i':
 		case 'v':
-		case 'x': goto yy60;
+		case 'x': goto yy58;
 		default: goto yy24;
+	}
+yy59:
+	yych = *++p;
+yy60:
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy61;
+		case ';': goto yy62;
+		case ']': goto yy100;
+		default: goto yy59;
 	}
 yy61:
 	yych = *++p;
-yy62:
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy63;
-		case ';': goto yy64;
-		case ']': goto yy110;
-		default: goto yy61;
+		case ':': goto yy101;
+		case ';': goto yy62;
+		case ']': goto yy100;
+		default: goto yy59;
+	}
+yy62:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy61;
+		case ';': goto yy102;
+		case ']': goto yy100;
+		default: goto yy59;
 	}
 yy63:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy111;
-		case ';': goto yy64;
-		case ']': goto yy110;
-		default: goto yy61;
-	}
-yy64:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy63;
-		case ';': goto yy112;
-		case ']': goto yy110;
-		default: goto yy61;
-	}
-yy65:
 	yych = *++p;
 	switch (yych) {
 		case '0':
@@ -1047,1182 +960,1271 @@ yy65:
 		case 'w':
 		case 'x':
 		case 'y':
-		case 'z': goto yy113;
+		case 'z': goto yy103;
+		default: goto yy25;
+	}
+yy64:
+	yych = *++p;
+	switch (yych) {
+		case '_': goto yy104;
+		default: goto yy25;
+	}
+yy65:
+	yych = *++p;
+	switch (yych) {
+		case 'd': goto yy105;
 		default: goto yy25;
 	}
 yy66:
 	yych = *++p;
 	switch (yych) {
-		case '_': goto yy114;
+		case 'd': goto yy106;
 		default: goto yy25;
 	}
 yy67:
 	yych = *++p;
 	switch (yych) {
-		case 'd': goto yy115;
+		case 'd': goto yy107;
+		case 'e': goto yy108;
+		case 'n': goto yy109;
 		default: goto yy25;
 	}
 yy68:
 	yych = *++p;
 	switch (yych) {
-		case 'd': goto yy116;
+		case 'a': goto yy110;
 		default: goto yy25;
 	}
 yy69:
 	yych = *++p;
 	switch (yych) {
-		case 'd': goto yy117;
-		case 'e': goto yy118;
-		case 'n': goto yy119;
+		case 'c': goto yy111;
 		default: goto yy25;
 	}
 yy70:
 	yych = *++p;
 	switch (yych) {
-		case 'a': goto yy120;
+		case ')': goto yy57;
+		case 'I':
+		case 'V':
+		case 'X':
+		case 'i':
+		case 'v':
+		case 'x': goto yy58;
+		case 'd': goto yy112;
 		default: goto yy25;
 	}
 yy71:
 	yych = *++p;
 	switch (yych) {
-		case 'c': goto yy121;
+		case '~': goto yy113;
 		default: goto yy25;
 	}
 yy72:
 	yych = *++p;
 	switch (yych) {
-		case ')': goto yy59;
-		case 'I':
-		case 'V':
-		case 'X':
-		case 'i':
-		case 'v':
-		case 'x': goto yy60;
-		case 'd': goto yy122;
-		default: goto yy25;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy115;
+		case ':': goto yy72;
+		case ';': goto yy28;
+		default: goto yy24;
 	}
 yy73:
 	yych = *++p;
 	switch (yych) {
-		case '~': goto yy123;
-		default: goto yy25;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy117;
+		case ':': goto yy27;
+		case ';': goto yy73;
+		default: goto yy24;
 	}
 yy74:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
 		case '\t':
-		case ' ': goto yy125;
-		case ':': goto yy74;
-		case ';': goto yy28;
-		default: goto yy24;
+		case ' ': goto yy37;
+		case '*': goto yy118;
+		default: goto yy25;
 	}
 yy75:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy127;
-		case ':': goto yy27;
-		case ';': goto yy75;
-		default: goto yy24;
-	}
+	if (yych <= 0x00) goto yy119;
+	goto yy75;
 yy76:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
 		case ' ': goto yy37;
-		case '*': goto yy128;
-		default: goto yy26;
+		case '*': goto yy120;
+		default: goto yy25;
 	}
 yy77:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy129;
-		default: goto yy26;
+		case '+': goto yy121;
+		default: goto yy25;
 	}
 yy78:
 	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy96;
-		default: goto yy26;
-	}
+	if (yych <= 0x00) goto yy122;
+	goto yy78;
 yy79:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy107;
-		default: goto yy26;
-	}
+	++p;
+#line 104 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1078 "block_scanner_gen.h"
 yy80:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy108;
-		default: goto yy26;
-	}
-yy81:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy109;
-		default: goto yy26;
-	}
-yy82:
-	yych = *++p;
-yy83:
-	switch (yych) {
-		case ')': goto yy81;
-		case 'I':
-		case 'V':
-		case 'X':
-		case 'i':
-		case 'v':
-		case 'x': goto yy82;
-		default: goto yy26;
-	}
-yy84:
-	yych = *++p;
-	if (yych <= 0x00) goto yy130;
-	goto yy84;
-yy85:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy131;
+		case '-': goto yy123;
 		default: goto yy25;
 	}
+yy81:
+	++p;
+#line 137 "block_scanner.re"
+	{ return AQ_BT_BLOCK_TITLE; }
+#line 1089 "block_scanner_gen.h"
+yy82:
+	yych = *++p;
+	if (yych <= 0x00) goto yy124;
+	goto yy82;
+yy83:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy43;
+		case '.': goto yy125;
+		default: goto yy25;
+	}
+yy84:
+	++p;
+#line 72 "block_scanner.re"
+	{ return AQ_BT_COMMENT; }
+#line 1106 "block_scanner_gen.h"
+yy85:
+	yych = *++p;
+	if (yych <= 0x00) goto yy126;
+	goto yy85;
 yy86:
 	yych = *++p;
 	switch (yych) {
-		case '+': goto yy132;
+		case '/': goto yy127;
 		default: goto yy25;
 	}
 yy87:
 	yych = *++p;
-	if (yych <= 0x00) goto yy133;
-	goto yy87;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy87;
+		default: goto yy128;
+	}
 yy88:
-	++p;
-#line 104 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1214 "block_scanner_gen.h"
-yy89:
 	yych = *++p;
 	switch (yych) {
-		case '-': goto yy134;
+		case 0x00: goto yy129;
+		case '\t':
+		case ' ': goto yy130;
+		case ':': goto yy72;
 		default: goto yy25;
 	}
-yy90:
+yy89:
 	++p;
-#line 137 "block_scanner.re"
-	{ return AQ_BT_BLOCK_TITLE; }
-#line 1225 "block_scanner_gen.h"
+#line 168 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1138 "block_scanner_gen.h"
+yy90:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy131;
 yy91:
 	yych = *++p;
-	if (yych <= 0x00) goto yy135;
-	goto yy91;
+	switch (yych) {
+		case 0x00: goto yy89;
+		case '\t':
+		case ' ': goto yy90;
+		case ':': goto yy132;
+		default: goto yy25;
+	}
 yy92:
+	++p;
+#line 170 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1156 "block_scanner_gen.h"
+yy93:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy133;
+yy94:
 	yych = *++p;
 	switch (yych) {
 		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy136;
+		case ' ': goto yy134;
 		default: goto yy25;
 	}
-yy93:
-	++p;
-#line 72 "block_scanner.re"
-	{ return AQ_BT_COMMENT; }
-#line 1242 "block_scanner_gen.h"
-yy94:
-	yych = *++p;
-	if (yych <= 0x00) goto yy137;
-	goto yy94;
 yy95:
 	yych = *++p;
 	switch (yych) {
-		case '/': goto yy138;
-		default: goto yy25;
+		case 0x00: goto yy135;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		case '<': goto yy95;
+		default: goto yy24;
 	}
 yy96:
+	yych = *++p;
+	if (yych <= 0x00) goto yy136;
+	goto yy96;
+yy97:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy54;
+		case '=': goto yy137;
+		default: goto yy25;
+	}
+yy98:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
 		case '\t':
-		case ' ': goto yy96;
-		default: goto yy139;
+		case ' ': goto yy98;
+		default: goto yy138;
 	}
-yy97:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy140;
-		case '\t':
-		case ' ': goto yy141;
-		case ':': goto yy74;
-		default: goto yy25;
-	}
-yy98:
-	++p;
-#line 171 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1274 "block_scanner_gen.h"
 yy99:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy142;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy99;
+		default: goto yy139;
+	}
 yy100:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy98;
-		case '\t':
-		case ' ': goto yy99;
-		case ':': goto yy143;
-		default: goto yy25;
+		case 0x00: goto yy140;
+		case ':': goto yy61;
+		case ';': goto yy62;
+		case ']': goto yy100;
+		default: goto yy59;
 	}
 yy101:
-	++p;
-#line 173 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1292 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy141;
+		case ':': goto yy101;
+		case ';': goto yy62;
+		case ']': goto yy100;
+		default: goto yy59;
+	}
 yy102:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy144;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy142;
+		case ':': goto yy61;
+		case ';': goto yy102;
+		case ']': goto yy100;
+		default: goto yy59;
+	}
 yy103:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy145;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy143;
+		case ';': goto yy144;
+		case ']': goto yy145;
+		default: goto yy103;
 	}
 yy104:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy146;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		case '<': goto yy104;
-		default: goto yy24;
+		case '_': goto yy146;
+		default: goto yy25;
 	}
 yy105:
 	yych = *++p;
-	if (yych <= 0x00) goto yy147;
-	goto yy105;
+	switch (yych) {
+		case 'i': goto yy147;
+		default: goto yy25;
+	}
 yy106:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy148;
+		case 'i': goto yy148;
 		default: goto yy25;
 	}
 yy107:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy107;
-		default: goto yy149;
+		case 'e': goto yy149;
+		default: goto yy25;
 	}
 yy108:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy108;
-		default: goto yy150;
+		case 'v': goto yy150;
+		default: goto yy25;
 	}
 yy109:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy109;
-		default: goto yy151;
+		case 'd': goto yy151;
+		default: goto yy25;
 	}
 yy110:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy152;
-		case ':': goto yy63;
-		case ';': goto yy64;
-		case ']': goto yy110;
-		default: goto yy61;
+		case 'g': goto yy152;
+		default: goto yy25;
 	}
 yy111:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy153;
-		case ':': goto yy111;
-		case ';': goto yy64;
-		case ']': goto yy110;
-		default: goto yy61;
+		case 'l': goto yy153;
+		default: goto yy25;
 	}
 yy112:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy154;
-		case ':': goto yy63;
-		case ';': goto yy112;
-		case ']': goto yy110;
-		default: goto yy61;
+		case 'e': goto yy154;
+		default: goto yy25;
 	}
 yy113:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy155;
-		case ';': goto yy156;
-		case ']': goto yy157;
-		default: goto yy113;
+		case '~': goto yy155;
+		default: goto yy25;
 	}
 yy114:
-	yych = *++p;
-	switch (yych) {
-		case '_': goto yy158;
-		default: goto yy25;
-	}
+	++p;
+#line 173 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1309 "block_scanner_gen.h"
 yy115:
 	yych = *++p;
-	switch (yych) {
-		case 'i': goto yy159;
-		default: goto yy25;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy156;
 yy116:
-	yych = *++p;
-	switch (yych) {
-		case 'i': goto yy160;
-		default: goto yy25;
-	}
+	++p;
+#line 174 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1318 "block_scanner_gen.h"
 yy117:
 	yych = *++p;
-	switch (yych) {
-		case 'e': goto yy161;
-		default: goto yy25;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy158;
 yy118:
 	yych = *++p;
 	switch (yych) {
-		case 'v': goto yy162;
+		case '\t':
+		case ' ': goto yy37;
+		case '*': goto yy160;
 		default: goto yy25;
 	}
 yy119:
-	yych = *++p;
-	switch (yych) {
-		case 'd': goto yy163;
-		default: goto yy25;
-	}
+	++p;
+#line 153 "block_scanner.re"
+	{ return AQ_BT_LIST_UNORD; }
+#line 1335 "block_scanner_gen.h"
 yy120:
 	yych = *++p;
 	switch (yych) {
-		case 'g': goto yy164;
+		case 0x00: goto yy161;
+		case '\t':
+		case ' ': goto yy37;
+		case '*': goto yy162;
 		default: goto yy25;
 	}
 yy121:
 	yych = *++p;
 	switch (yych) {
-		case 'l': goto yy165;
+		case 0x00: goto yy163;
+		case '+': goto yy164;
 		default: goto yy25;
 	}
 yy122:
-	yych = *++p;
-	switch (yych) {
-		case 'e': goto yy166;
-		default: goto yy25;
-	}
+	++p;
+#line 152 "block_scanner.re"
+	{ return AQ_BT_LIST_UNORD; }
+#line 1356 "block_scanner_gen.h"
 yy123:
 	yych = *++p;
 	switch (yych) {
-		case '~': goto yy167;
+		case 0x00: goto yy165;
+		case '-': goto yy166;
 		default: goto yy25;
 	}
 yy124:
 	++p;
-#line 175 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1453 "block_scanner_gen.h"
-yy125:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy168;
-yy126:
-	++p;
-#line 176 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1462 "block_scanner_gen.h"
-yy127:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy170;
-yy128:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy172;
-		default: goto yy26;
-	}
-yy129:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy173;
-		default: goto yy26;
-	}
-yy130:
-	++p;
-#line 156 "block_scanner.re"
-	{ return AQ_BT_LIST_UNORD; }
-#line 1487 "block_scanner_gen.h"
-yy131:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy174;
-		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy175;
-		default: goto yy25;
-	}
-yy132:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy176;
-		case '+': goto yy177;
-		default: goto yy25;
-	}
-yy133:
-	++p;
-#line 155 "block_scanner.re"
-	{ return AQ_BT_LIST_UNORD; }
-#line 1508 "block_scanner_gen.h"
-yy134:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy178;
-		case '-': goto yy179;
-		default: goto yy25;
-	}
-yy135:
-	++p;
 #line 144 "block_scanner.re"
 	{ return AQ_BT_LIST_ORD; }
-#line 1520 "block_scanner_gen.h"
-yy136:
+#line 1368 "block_scanner_gen.h"
+yy125:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy180;
+		case 0x00: goto yy167;
 		case '\t':
 		case ' ': goto yy43;
-		case '.': goto yy181;
+		case '.': goto yy168;
 		default: goto yy25;
 	}
-yy137:
+yy126:
 	++p;
 #line 71 "block_scanner.re"
 	{ return AQ_BT_COMMENT; }
-#line 1534 "block_scanner_gen.h"
-yy138:
+#line 1382 "block_scanner_gen.h"
+yy127:
 	yych = *++p;
-	if (yych <= 0x00) goto yy182;
+	if (yych <= 0x00) goto yy169;
 	goto yy25;
-yy139:
+yy128:
 	yych = *++p;
-	if (yych <= 0x00) goto yy183;
-	goto yy139;
-yy140:
+	if (yych <= 0x00) goto yy170;
+	goto yy128;
+yy129:
 	++p;
 #line 79 "block_scanner.re"
 	{
         return AQ_BT_ATTR_ENTRY;
     }
-#line 1549 "block_scanner_gen.h"
+#line 1397 "block_scanner_gen.h"
+yy130:
+	yych = *++p;
+	if (yych <= 0x00) goto yy129;
+	goto yy130;
+yy131:
+	yych = *++p;
+	if (yych <= 0x00) goto yy171;
+	goto yy131;
+yy132:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy89;
+		case '\t':
+		case ' ': goto yy90;
+		case ':': goto yy72;
+		default: goto yy25;
+	}
+yy133:
+	yych = *++p;
+	if (yych <= 0x00) goto yy172;
+	goto yy133;
+yy134:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case '\t':
+		case ' ': goto yy134;
+		default: goto yy173;
+	}
+yy135:
+	++p;
+#line 63 "block_scanner.re"
+	{ return AQ_BT_PAGE_BREAK; }
+#line 1431 "block_scanner_gen.h"
+yy136:
+	++p;
+#line 84 "block_scanner.re"
+	{ return AQ_BT_SECTION_TITLE; }
+#line 1436 "block_scanner_gen.h"
+yy137:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy174;
+		case '\t':
+		case ' ': goto yy54;
+		case '=': goto yy175;
+		default: goto yy25;
+	}
+yy138:
+	yych = *++p;
+	if (yych <= 0x00) goto yy176;
+	goto yy138;
+yy139:
+	yych = *++p;
+	if (yych <= 0x00) goto yy177;
+	goto yy139;
+yy140:
+	++p;
+#line 130 "block_scanner.re"
+	{ return AQ_BT_BLOCK_ATTR; }
+#line 1458 "block_scanner_gen.h"
 yy141:
 	yych = *++p;
-	if (yych <= 0x00) goto yy140;
-	goto yy141;
+	if (yych <= 0x00) goto yy26;
+	goto yy179;
 yy142:
 	yych = *++p;
-	if (yych <= 0x00) goto yy184;
-	goto yy142;
+	if (yych <= 0x00) goto yy26;
+	goto yy182;
 yy143:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy98;
-		case '\t':
-		case ' ': goto yy99;
-		case ':': goto yy74;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy185;
+		case ';': goto yy144;
+		case ']': goto yy145;
+		default: goto yy103;
 	}
 yy144:
 	yych = *++p;
-	if (yych <= 0x00) goto yy185;
-	goto yy144;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy143;
+		case ';': goto yy186;
+		case ']': goto yy145;
+		default: goto yy103;
+	}
 yy145:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case '\t':
-		case ' ': goto yy145;
-		default: goto yy186;
+		case ':': goto yy143;
+		case ';': goto yy144;
+		case ']': goto yy187;
+		default: goto yy103;
 	}
 yy146:
-	++p;
-#line 63 "block_scanner.re"
-	{ return AQ_BT_PAGE_BREAK; }
-#line 1583 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy188;
+		case '_': goto yy189;
+		default: goto yy25;
+	}
 yy147:
-	++p;
-#line 84 "block_scanner.re"
-	{ return AQ_BT_SECTION_TITLE; }
-#line 1588 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 'o': goto yy190;
+		default: goto yy25;
+	}
 yy148:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy187;
-		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy188;
+		case 'f': goto yy191;
 		default: goto yy25;
 	}
 yy149:
 	yych = *++p;
-	if (yych <= 0x00) goto yy189;
-	goto yy149;
+	switch (yych) {
+		case 'f': goto yy192;
+		default: goto yy25;
+	}
 yy150:
 	yych = *++p;
-	if (yych <= 0x00) goto yy190;
-	goto yy150;
+	switch (yych) {
+		case 'a': goto yy193;
+		default: goto yy25;
+	}
 yy151:
 	yych = *++p;
-	if (yych <= 0x00) goto yy191;
-	goto yy151;
+	switch (yych) {
+		case 'e': goto yy194;
+		default: goto yy25;
+	}
 yy152:
-	++p;
-#line 130 "block_scanner.re"
-	{ return AQ_BT_BLOCK_ATTR; }
-#line 1614 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 'e': goto yy195;
+		default: goto yy25;
+	}
 yy153:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy193;
+	switch (yych) {
+		case 'u': goto yy196;
+		default: goto yy25;
+	}
 yy154:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy196;
+	switch (yych) {
+		case 'o': goto yy197;
+		default: goto yy25;
+	}
 yy155:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy199;
-		case ';': goto yy156;
-		case ']': goto yy157;
-		default: goto yy113;
+		case 0x00: goto yy198;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		case '~': goto yy155;
+		default: goto yy24;
 	}
 yy156:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy155;
-		case ';': goto yy200;
-		case ']': goto yy157;
-		default: goto yy113;
-	}
+	if (yych <= 0x00) goto yy114;
+	goto yy156;
 yy157:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy155;
-		case ';': goto yy156;
-		case ']': goto yy201;
-		default: goto yy113;
-	}
 yy158:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy202;
-		case '_': goto yy203;
-		default: goto yy25;
+		case 0x00: goto yy116;
+		case ':': goto yy159;
+		default: goto yy157;
 	}
 yy159:
 	yych = *++p;
 	switch (yych) {
-		case 'o': goto yy204;
-		default: goto yy25;
+		case 0x00: goto yy116;
+		case ':': goto yy199;
+		default: goto yy157;
 	}
 yy160:
 	yych = *++p;
 	switch (yych) {
-		case 'f': goto yy205;
+		case '\t':
+		case ' ': goto yy37;
+		case '*': goto yy200;
 		default: goto yy25;
 	}
 yy161:
-	yych = *++p;
-	switch (yych) {
-		case 'f': goto yy206;
-		default: goto yy25;
-	}
-yy162:
-	yych = *++p;
-	switch (yych) {
-		case 'a': goto yy207;
-		default: goto yy25;
-	}
-yy163:
-	yych = *++p;
-	switch (yych) {
-		case 'e': goto yy208;
-		default: goto yy25;
-	}
-yy164:
-	yych = *++p;
-	switch (yych) {
-		case 'e': goto yy209;
-		default: goto yy25;
-	}
-yy165:
-	yych = *++p;
-	switch (yych) {
-		case 'u': goto yy210;
-		default: goto yy25;
-	}
-yy166:
-	yych = *++p;
-	switch (yych) {
-		case 'o': goto yy211;
-		default: goto yy25;
-	}
-yy167:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy212;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		case '~': goto yy167;
-		default: goto yy24;
-	}
-yy168:
-	yych = *++p;
-	if (yych <= 0x00) goto yy124;
-	goto yy168;
-yy169:
-	yych = *++p;
-yy170:
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy171;
-		default: goto yy169;
-	}
-yy171:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy213;
-		default: goto yy169;
-	}
-yy172:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy214;
-		default: goto yy26;
-	}
-yy173:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy215;
-		default: goto yy26;
-	}
-yy174:
 	++p;
 #line 110 "block_scanner.re"
 	{ return AQ_BT_DELIMITER; }
-#line 1753 "block_scanner_gen.h"
+#line 1589 "block_scanner_gen.h"
+yy162:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy201;
+		case '\t':
+		case ' ': goto yy37;
+		case '*': goto yy202;
+		default: goto yy25;
+	}
+yy163:
+	++p;
+#line 111 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1603 "block_scanner_gen.h"
+yy164:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy203;
+		case '+': goto yy164;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		default: goto yy24;
+	}
+yy165:
+	++p;
+#line 106 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1617 "block_scanner_gen.h"
+yy166:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy204;
+		case '-': goto yy166;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		default: goto yy24;
+	}
+yy167:
+	++p;
+#line 107 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1631 "block_scanner_gen.h"
+yy168:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy205;
+		case '\t':
+		case ' ': goto yy43;
+		case '.': goto yy168;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		default: goto yy24;
+	}
+yy169:
+	++p;
+#line 66 "block_scanner.re"
+	{ return AQ_BT_BLOCK_COMMENT; }
+#line 1647 "block_scanner_gen.h"
+yy170:
+	++p;
+#line 146 "block_scanner.re"
+	{ return AQ_BT_LIST_ORD; }
+#line 1652 "block_scanner_gen.h"
+yy171:
+	++p;
+#line 167 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1657 "block_scanner_gen.h"
+yy172:
+	++p;
+#line 169 "block_scanner.re"
+	{ return AQ_BT_LIST_DESCRIPT; }
+#line 1662 "block_scanner_gen.h"
+yy173:
+	yych = *++p;
+	if (yych <= 0x00) goto yy206;
+	goto yy173;
+yy174:
+	++p;
+#line 108 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1671 "block_scanner_gen.h"
 yy175:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy216;
+		case 0x00: goto yy207;
 		case '\t':
-		case ' ': goto yy37;
-		case '*': goto yy217;
+		case ' ': goto yy54;
+		case '=': goto yy208;
 		default: goto yy25;
 	}
 yy176:
 	++p;
-#line 111 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1767 "block_scanner_gen.h"
-yy177:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy218;
-		case '+': goto yy177;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		default: goto yy24;
-	}
-yy178:
-	++p;
-#line 106 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1781 "block_scanner_gen.h"
-yy179:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy219;
-		case '-': goto yy179;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		default: goto yy24;
-	}
-yy180:
-	++p;
-#line 107 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1795 "block_scanner_gen.h"
-yy181:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy220;
-		case '\t':
-		case ' ': goto yy43;
-		case '.': goto yy221;
-		default: goto yy25;
-	}
-yy182:
-	++p;
-#line 66 "block_scanner.re"
-	{ return AQ_BT_BLOCK_COMMENT; }
-#line 1809 "block_scanner_gen.h"
-yy183:
-	++p;
-#line 146 "block_scanner.re"
-	{ return AQ_BT_LIST_ORD; }
-#line 1814 "block_scanner_gen.h"
-yy184:
-	++p;
-#line 170 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1819 "block_scanner_gen.h"
-yy185:
-	++p;
-#line 172 "block_scanner.re"
-	{ return AQ_BT_LIST_DESCRIPT; }
-#line 1824 "block_scanner_gen.h"
-yy186:
-	yych = *++p;
-	if (yych <= 0x00) goto yy222;
-	goto yy186;
-yy187:
-	++p;
-#line 108 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1833 "block_scanner_gen.h"
-yy188:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy223;
-		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy224;
-		default: goto yy25;
-	}
-yy189:
-	++p;
-#line 152 "block_scanner.re"
-	{ return AQ_BT_LIST_ORD; }
-#line 1847 "block_scanner_gen.h"
-yy190:
-	++p;
 #line 148 "block_scanner.re"
 	{ return AQ_BT_LIST_ORD; }
-#line 1852 "block_scanner_gen.h"
-yy191:
+#line 1685 "block_scanner_gen.h"
+yy177:
 	++p;
 #line 150 "block_scanner.re"
 	{ return AQ_BT_LIST_ORD; }
-#line 1857 "block_scanner_gen.h"
+#line 1690 "block_scanner_gen.h"
+yy178:
+	yych = *++p;
+yy179:
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy180;
+		default: goto yy178;
+	}
+yy180:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy140;
+		case ']': goto yy180;
+		default: goto yy178;
+	}
+yy181:
+	yych = *++p;
+yy182:
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy183;
+		case ']': goto yy184;
+		default: goto yy181;
+	}
+yy183:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy209;
+		case ']': goto yy184;
+		default: goto yy181;
+	}
+yy184:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy140;
+		case ':': goto yy183;
+		case ']': goto yy184;
+		default: goto yy181;
+	}
+yy185:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy210;
+		case ':': goto yy185;
+		case ';': goto yy144;
+		case ']': goto yy145;
+		default: goto yy103;
+	}
+yy186:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy211;
+		case ':': goto yy143;
+		case ';': goto yy186;
+		case ']': goto yy145;
+		default: goto yy103;
+	}
+yy187:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy212;
+		case ':': goto yy143;
+		case ';': goto yy144;
+		case ']': goto yy187;
+		default: goto yy103;
+	}
+yy188:
+	++p;
+#line 109 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1766 "block_scanner_gen.h"
+yy189:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy213;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		case '_': goto yy189;
+		default: goto yy24;
+	}
+yy190:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy214;
+		default: goto yy25;
+	}
+yy191:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy215;
+		default: goto yy25;
+	}
 yy192:
 	yych = *++p;
-yy193:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy194;
-		default: goto yy192;
+		case ':': goto yy216;
+		default: goto yy25;
+	}
+yy193:
+	yych = *++p;
+	switch (yych) {
+		case 'l': goto yy217;
+		default: goto yy25;
 	}
 yy194:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy152;
-		case ']': goto yy194;
-		default: goto yy192;
+		case 'f': goto yy218;
+		default: goto yy25;
 	}
 yy195:
 	yych = *++p;
-yy196:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy197;
-		case ']': goto yy198;
-		default: goto yy195;
+		case ':': goto yy219;
+		default: goto yy25;
+	}
+yy196:
+	yych = *++p;
+	switch (yych) {
+		case 'd': goto yy220;
+		default: goto yy25;
 	}
 yy197:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy225;
-		case ']': goto yy198;
-		default: goto yy195;
+		case ':': goto yy221;
+		default: goto yy25;
 	}
 yy198:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy152;
-		case ':': goto yy197;
-		case ']': goto yy198;
-		default: goto yy195;
-	}
+	++p;
+#line 122 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1828 "block_scanner_gen.h"
 yy199:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy226;
+		case ' ': goto yy222;
 		case ':': goto yy199;
-		case ';': goto yy156;
-		case ']': goto yy157;
-		default: goto yy113;
+		default: goto yy157;
 	}
 yy200:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
 		case '\t':
-		case ' ': goto yy227;
-		case ':': goto yy155;
-		case ';': goto yy200;
-		case ']': goto yy157;
-		default: goto yy113;
+		case ' ': goto yy37;
+		default: goto yy25;
 	}
 yy201:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy228;
-		case ':': goto yy155;
-		case ';': goto yy156;
-		case ']': goto yy201;
-		default: goto yy113;
-	}
-yy202:
 	++p;
-#line 109 "block_scanner.re"
+#line 120 "block_scanner.re"
 	{ return AQ_BT_DELIMITER; }
-#line 1933 "block_scanner_gen.h"
-yy203:
+#line 1849 "block_scanner_gen.h"
+yy202:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy229;
+		case 0x00: goto yy201;
+		case '*': goto yy202;
 		case ':': goto yy27;
 		case ';': goto yy28;
-		case '_': goto yy203;
 		default: goto yy24;
 	}
+yy203:
+	++p;
+#line 121 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1863 "block_scanner_gen.h"
 yy204:
-	yych = *++p;
-	switch (yych) {
-		case ':': goto yy230;
-		default: goto yy25;
-	}
+	++p;
+#line 116 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1868 "block_scanner_gen.h"
 yy205:
-	yych = *++p;
-	switch (yych) {
-		case ':': goto yy231;
-		default: goto yy25;
-	}
+	++p;
+#line 117 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1873 "block_scanner_gen.h"
 yy206:
-	yych = *++p;
-	switch (yych) {
-		case ':': goto yy232;
-		default: goto yy25;
-	}
+	++p;
+#line 140 "block_scanner.re"
+	{ return AQ_BT_LIST_CALLOUT; }
+#line 1878 "block_scanner_gen.h"
 yy207:
-	yych = *++p;
-	switch (yych) {
-		case 'l': goto yy233;
-		default: goto yy25;
-	}
+	++p;
+#line 118 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1883 "block_scanner_gen.h"
 yy208:
 	yych = *++p;
 	switch (yych) {
-		case 'f': goto yy234;
+		case 0x00: goto yy207;
+		case '\t':
+		case ' ': goto yy54;
+		case '=': goto yy223;
 		default: goto yy25;
 	}
 yy209:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy235;
-		default: goto yy25;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy224;
+		case ':': goto yy209;
+		case ']': goto yy184;
+		default: goto yy181;
 	}
 yy210:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy226;
+yy211:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy229;
+yy212:
+	++p;
+#line 125 "block_scanner.re"
+	{ return AQ_BT_BLOCK_ANCHOR; }
+#line 1915 "block_scanner_gen.h"
+yy213:
+	++p;
+#line 119 "block_scanner.re"
+	{ return AQ_BT_DELIMITER; }
+#line 1920 "block_scanner_gen.h"
+yy214:
+	yych = *++p;
 	switch (yych) {
-		case 'd': goto yy236;
+		case ':': goto yy232;
 		default: goto yy25;
 	}
-yy211:
+yy215:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy233;
+		default: goto yy25;
+	}
+yy216:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy234;
+		default: goto yy25;
+	}
+yy217:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy235;
+		default: goto yy25;
+	}
+yy218:
+	yych = *++p;
+	switch (yych) {
+		case ':': goto yy236;
+		default: goto yy25;
+	}
+yy219:
 	yych = *++p;
 	switch (yych) {
 		case ':': goto yy237;
 		default: goto yy25;
 	}
-yy212:
-	++p;
-#line 122 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 1995 "block_scanner_gen.h"
-yy213:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy238;
-		case ':': goto yy213;
-		default: goto yy169;
-	}
-yy214:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy37;
-		default: goto yy26;
-	}
-yy215:
-	yych = *++p;
-	switch (yych) {
-		case '\t':
-		case ' ': goto yy43;
-		default: goto yy26;
-	}
-yy216:
-	++p;
-#line 120 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2023 "block_scanner_gen.h"
-yy217:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy216;
-		case '*': goto yy217;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		default: goto yy24;
-	}
-yy218:
-	++p;
-#line 121 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2037 "block_scanner_gen.h"
-yy219:
-	++p;
-#line 116 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2042 "block_scanner_gen.h"
 yy220:
-	++p;
-#line 117 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2047 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 'e': goto yy238;
+		default: goto yy25;
+	}
 yy221:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy220;
-		case '.': goto yy221;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		default: goto yy24;
-	}
-yy222:
-	++p;
-#line 140 "block_scanner.re"
-	{ return AQ_BT_LIST_CALLOUT; }
-#line 2061 "block_scanner_gen.h"
-yy223:
-	++p;
-#line 118 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2066 "block_scanner_gen.h"
-yy224:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy223;
-		case '\t':
-		case ' ': goto yy55;
-		case '=': goto yy239;
+		case ':': goto yy239;
 		default: goto yy25;
 	}
-yy225:
+yy222:
+	yych = *++p;
+	if (yych <= 0x00) goto yy116;
+	goto yy156;
+yy223:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy240;
-		case ':': goto yy225;
-		case ']': goto yy198;
-		default: goto yy195;
+		case 0x00: goto yy207;
+		case ':': goto yy27;
+		case ';': goto yy28;
+		case '=': goto yy223;
+		default: goto yy24;
 	}
-yy226:
+yy224:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy242;
+	if (yych <= 0x00) goto yy116;
+	goto yy179;
+yy225:
+	yych = *++p;
+yy226:
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy227;
+		default: goto yy225;
+	}
 yy227:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy245;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy240;
+		default: goto yy225;
+	}
 yy228:
-	++p;
-#line 125 "block_scanner.re"
-	{ return AQ_BT_BLOCK_ANCHOR; }
-#line 2098 "block_scanner_gen.h"
+	yych = *++p;
 yy229:
-	++p;
-#line 119 "block_scanner.re"
-	{ return AQ_BT_DELIMITER; }
-#line 2103 "block_scanner_gen.h"
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy230;
+		case ']': goto yy231;
+		default: goto yy228;
+	}
 yy230:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy248;
-		default: goto yy25;
+		case 0x00: goto yy116;
+		case ':': goto yy241;
+		case ']': goto yy231;
+		default: goto yy228;
 	}
 yy231:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy249;
-		default: goto yy25;
+		case 0x00: goto yy116;
+		case ':': goto yy230;
+		case ']': goto yy242;
+		default: goto yy228;
 	}
 yy232:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy250;
-		default: goto yy25;
+		case '\t':
+		case ' ': goto yy115;
+		case '[': goto yy243;
+		default: goto yy245;
 	}
 yy233:
 	yych = *++p;
-	switch (yych) {
-		case ':': goto yy251;
-		default: goto yy25;
-	}
+	if (yych <= 0x00) goto yy247;
+	goto yy233;
 yy234:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy252;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy115;
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case 'A':
+		case 'B':
+		case 'C':
+		case 'D':
+		case 'E':
+		case 'F':
+		case 'G':
+		case 'H':
+		case 'I':
+		case 'J':
+		case 'K':
+		case 'L':
+		case 'M':
+		case 'N':
+		case 'O':
+		case 'P':
+		case 'Q':
+		case 'R':
+		case 'S':
+		case 'T':
+		case 'U':
+		case 'V':
+		case 'W':
+		case 'X':
+		case 'Y':
+		case 'Z':
+		case '_':
+		case 'a':
+		case 'b':
+		case 'c':
+		case 'd':
+		case 'e':
+		case 'f':
+		case 'g':
+		case 'h':
+		case 'i':
+		case 'j':
+		case 'k':
+		case 'l':
+		case 'm':
+		case 'n':
+		case 'o':
+		case 'p':
+		case 'q':
+		case 'r':
+		case 's':
+		case 't':
+		case 'u':
+		case 'v':
+		case 'w':
+		case 'x':
+		case 'y':
+		case 'z': goto yy248;
+		case ':': goto yy72;
 		default: goto yy25;
 	}
 yy235:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy253;
+		case ':': goto yy249;
 		default: goto yy25;
 	}
 yy236:
 	yych = *++p;
 	switch (yych) {
-		case 'e': goto yy254;
+		case ':': goto yy250;
 		default: goto yy25;
 	}
 yy237:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy255;
-		default: goto yy25;
+		case '\t':
+		case ' ': goto yy115;
+		case '[': goto yy251;
+		default: goto yy253;
 	}
 yy238:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy168;
+	switch (yych) {
+		case ':': goto yy255;
+		default: goto yy25;
+	}
 yy239:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy223;
-		case ':': goto yy27;
-		case ';': goto yy28;
-		case '=': goto yy239;
-		default: goto yy24;
+		case '\t':
+		case ' ': goto yy115;
+		case '[': goto yy256;
+		default: goto yy258;
 	}
 yy240:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy193;
+	switch (yych) {
+		case 0x00: goto yy212;
+		case ']': goto yy240;
+		default: goto yy225;
+	}
 yy241:
 	yych = *++p;
-yy242:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy243;
-		default: goto yy241;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy260;
+		case ':': goto yy241;
+		case ']': goto yy231;
+		default: goto yy228;
+	}
+yy242:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy212;
+		case ':': goto yy230;
+		case ']': goto yy242;
+		default: goto yy228;
 	}
 yy243:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy256;
-		default: goto yy241;
+		case 0x00: goto yy26;
+		case ':': goto yy261;
+		case ';': goto yy246;
+		case '[': goto yy262;
+		default: goto yy243;
 	}
 yy244:
 	yych = *++p;
 yy245:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy246;
-		case ']': goto yy247;
-		default: goto yy244;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy263;
+		case ':': goto yy244;
+		case ';': goto yy246;
+		case '[': goto yy262;
+		default: goto yy243;
 	}
 yy246:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy257;
-		case ']': goto yy247;
-		default: goto yy244;
+		case 0x00: goto yy26;
+		case ':': goto yy261;
+		case ';': goto yy264;
+		case '[': goto yy262;
+		default: goto yy243;
 	}
 yy247:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy246;
-		case ']': goto yy258;
-		default: goto yy244;
-	}
+	++p;
+#line 97 "block_scanner.re"
+	{ return AQ_BT_ENDIF;  }
+#line 2203 "block_scanner_gen.h"
 yy248:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy125;
-		case '[': goto yy259;
-		default: goto yy261;
+		case 0x00: goto yy26;
+		case ':': goto yy265;
+		case ';': goto yy266;
+		case '[': goto yy267;
+		default: goto yy248;
 	}
 yy249:
 	yych = *++p;
-	if (yych <= 0x00) goto yy263;
-	goto yy249;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy115;
+		case ':': goto yy72;
+		case '[': goto yy268;
+		default: goto yy25;
+	}
 yy250:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy125;
+		case ' ': goto yy115;
 		case '0':
 		case '1':
 		case '2':
@@ -2285,1630 +2287,1445 @@ yy250:
 		case 'w':
 		case 'x':
 		case 'y':
-		case 'z': goto yy264;
-		case ':': goto yy74;
+		case 'z': goto yy269;
+		case ':': goto yy72;
 		default: goto yy25;
 	}
 yy251:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy265;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy270;
+		case ';': goto yy254;
+		case '[': goto yy271;
+		default: goto yy251;
 	}
 yy252:
 	yych = *++p;
-	switch (yych) {
-		case ':': goto yy266;
-		default: goto yy25;
-	}
 yy253:
-	yych = *++p;
 	switch (yych) {
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy125;
-		case '[': goto yy267;
-		default: goto yy269;
+		case ' ': goto yy272;
+		case ':': goto yy252;
+		case ';': goto yy254;
+		case '[': goto yy271;
+		default: goto yy251;
 	}
 yy254:
 	yych = *++p;
 	switch (yych) {
-		case ':': goto yy271;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy270;
+		case ';': goto yy273;
+		case '[': goto yy271;
+		default: goto yy251;
 	}
 yy255:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy125;
-		case '[': goto yy272;
-		default: goto yy274;
+		case ':': goto yy274;
+		default: goto yy25;
 	}
 yy256:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy228;
-		case ']': goto yy256;
-		default: goto yy241;
+		case 0x00: goto yy26;
+		case ':': goto yy275;
+		case ';': goto yy259;
+		case '[': goto yy276;
+		default: goto yy256;
 	}
 yy257:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy276;
-		case ':': goto yy257;
-		case ']': goto yy247;
-		default: goto yy244;
-	}
 yy258:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy228;
-		case ':': goto yy246;
-		case ']': goto yy258;
-		default: goto yy244;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy277;
+		case ':': goto yy257;
+		case ';': goto yy259;
+		case '[': goto yy276;
+		default: goto yy256;
 	}
 yy259:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy277;
-		case ';': goto yy262;
-		case '[': goto yy278;
-		default: goto yy259;
+		case ':': goto yy275;
+		case ';': goto yy278;
+		case '[': goto yy276;
+		default: goto yy256;
 	}
 yy260:
 	yych = *++p;
+	if (yych <= 0x00) goto yy116;
+	goto yy226;
 yy261:
+	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy279;
-		case ':': goto yy260;
-		case ';': goto yy262;
-		case '[': goto yy278;
-		default: goto yy259;
+		case 0x00: goto yy26;
+		case ':': goto yy244;
+		case ';': goto yy246;
+		case '[': goto yy262;
+		default: goto yy243;
 	}
 yy262:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy277;
+		case ':': goto yy279;
 		case ';': goto yy280;
-		case '[': goto yy278;
-		default: goto yy259;
+		case ']': goto yy281;
+		default: goto yy262;
 	}
 yy263:
-	++p;
-#line 97 "block_scanner.re"
-	{ return AQ_BT_ENDIF;  }
-#line 2386 "block_scanner_gen.h"
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy283;
 yy264:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy281;
-		case ';': goto yy282;
-		case '[': goto yy283;
-		default: goto yy264;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy286;
+		case ':': goto yy261;
+		case ';': goto yy264;
+		case '[': goto yy262;
+		default: goto yy243;
 	}
 yy265:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy125;
-		case ':': goto yy74;
-		case '[': goto yy284;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy287;
+		case ';': goto yy266;
+		case '[': goto yy267;
+		default: goto yy248;
 	}
 yy266:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy125;
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9':
-		case 'A':
-		case 'B':
-		case 'C':
-		case 'D':
-		case 'E':
-		case 'F':
-		case 'G':
-		case 'H':
-		case 'I':
-		case 'J':
-		case 'K':
-		case 'L':
-		case 'M':
-		case 'N':
-		case 'O':
-		case 'P':
-		case 'Q':
-		case 'R':
-		case 'S':
-		case 'T':
-		case 'U':
-		case 'V':
-		case 'W':
-		case 'X':
-		case 'Y':
-		case 'Z':
-		case '_':
-		case 'a':
-		case 'b':
-		case 'c':
-		case 'd':
-		case 'e':
-		case 'f':
-		case 'g':
-		case 'h':
-		case 'i':
-		case 'j':
-		case 'k':
-		case 'l':
-		case 'm':
-		case 'n':
-		case 'o':
-		case 'p':
-		case 'q':
-		case 'r':
-		case 's':
-		case 't':
-		case 'u':
-		case 'v':
-		case 'w':
-		case 'x':
-		case 'y':
-		case 'z': goto yy285;
-		case ':': goto yy74;
-		default: goto yy25;
+		case 0x00: goto yy26;
+		case ':': goto yy265;
+		case ';': goto yy288;
+		case '[': goto yy267;
+		default: goto yy248;
 	}
 yy267:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy286;
-		case ';': goto yy270;
-		case '[': goto yy287;
+		case ':': goto yy289;
+		case ';': goto yy290;
+		case ']': goto yy291;
 		default: goto yy267;
 	}
 yy268:
 	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy292;
+		case ';': goto yy293;
+		case ']': goto yy294;
+		default: goto yy268;
+	}
 yy269:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy288;
-		case ':': goto yy268;
-		case ';': goto yy270;
-		case '[': goto yy287;
-		default: goto yy267;
-	}
-yy270:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy286;
-		case ';': goto yy289;
-		case '[': goto yy287;
-		default: goto yy267;
-	}
-yy271:
-	yych = *++p;
-	switch (yych) {
-		case ':': goto yy290;
-		default: goto yy25;
-	}
-yy272:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy291;
-		case ';': goto yy275;
-		case '[': goto yy292;
-		default: goto yy272;
-	}
-yy273:
-	yych = *++p;
-yy274:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy293;
-		case ':': goto yy273;
-		case ';': goto yy275;
-		case '[': goto yy292;
-		default: goto yy272;
-	}
-yy275:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy291;
-		case ';': goto yy294;
-		case '[': goto yy292;
-		default: goto yy272;
-	}
-yy276:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy242;
-yy277:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy260;
-		case ';': goto yy262;
-		case '[': goto yy278;
-		default: goto yy259;
-	}
-yy278:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
 		case ':': goto yy295;
 		case ';': goto yy296;
-		case ']': goto yy297;
-		default: goto yy278;
+		case '[': goto yy297;
+		default: goto yy269;
+	}
+yy270:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy252;
+		case ';': goto yy254;
+		case '[': goto yy271;
+		default: goto yy251;
+	}
+yy271:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy298;
+		case ';': goto yy299;
+		case ']': goto yy300;
+		default: goto yy271;
+	}
+yy272:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy302;
+yy273:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy305;
+		case ':': goto yy270;
+		case ';': goto yy273;
+		case '[': goto yy271;
+		default: goto yy251;
+	}
+yy274:
+	yych = *++p;
+	switch (yych) {
+		case '\t':
+		case ' ': goto yy115;
+		case '[': goto yy306;
+		default: goto yy308;
+	}
+yy275:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy257;
+		case ';': goto yy259;
+		case '[': goto yy276;
+		default: goto yy256;
+	}
+yy276:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy310;
+		case ';': goto yy311;
+		case ']': goto yy312;
+		default: goto yy276;
+	}
+yy277:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy314;
+yy278:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy317;
+		case ':': goto yy275;
+		case ';': goto yy278;
+		case '[': goto yy276;
+		default: goto yy256;
 	}
 yy279:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy299;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy318;
+		case ';': goto yy280;
+		case ']': goto yy281;
+		default: goto yy262;
+	}
 yy280:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy302;
-		case ':': goto yy277;
-		case ';': goto yy280;
-		case '[': goto yy278;
-		default: goto yy259;
+		case 0x00: goto yy26;
+		case ':': goto yy279;
+		case ';': goto yy319;
+		case ']': goto yy281;
+		default: goto yy262;
 	}
 yy281:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy303;
-		case ';': goto yy282;
-		case '[': goto yy283;
-		default: goto yy264;
+		case 0x00: goto yy320;
+		case ':': goto yy279;
+		case ';': goto yy280;
+		case ']': goto yy281;
+		default: goto yy262;
 	}
 yy282:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy281;
-		case ';': goto yy304;
-		case '[': goto yy283;
-		default: goto yy264;
-	}
 yy283:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy305;
-		case ';': goto yy306;
-		case ']': goto yy307;
-		default: goto yy283;
+		case 0x00: goto yy114;
+		case '[': goto yy284;
+		default: goto yy282;
 	}
 yy284:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy308;
-		case ';': goto yy309;
-		case ']': goto yy310;
-		default: goto yy284;
-	}
 yy285:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy311;
-		case ';': goto yy312;
-		case '[': goto yy313;
-		default: goto yy285;
+		case 0x00: goto yy114;
+		case ']': goto yy321;
+		default: goto yy284;
 	}
 yy286:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy268;
-		case ';': goto yy270;
-		case '[': goto yy287;
-		default: goto yy267;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy323;
 yy287:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy314;
-		case ';': goto yy315;
-		case ']': goto yy316;
-		default: goto yy287;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy327;
+		case ':': goto yy287;
+		case ';': goto yy266;
+		case '[': goto yy267;
+		default: goto yy248;
 	}
 yy288:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy318;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy328;
+		case ':': goto yy265;
+		case ';': goto yy288;
+		case '[': goto yy267;
+		default: goto yy248;
+	}
 yy289:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy321;
-		case ':': goto yy286;
-		case ';': goto yy289;
-		case '[': goto yy287;
+		case 0x00: goto yy26;
+		case ':': goto yy329;
+		case ';': goto yy290;
+		case ']': goto yy291;
 		default: goto yy267;
 	}
 yy290:
 	yych = *++p;
 	switch (yych) {
-		case '\t':
-		case ' ': goto yy125;
-		case '[': goto yy322;
-		default: goto yy324;
+		case 0x00: goto yy26;
+		case ':': goto yy289;
+		case ';': goto yy330;
+		case ']': goto yy291;
+		default: goto yy267;
 	}
 yy291:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy273;
-		case ';': goto yy275;
-		case '[': goto yy292;
-		default: goto yy272;
+		case 0x00: goto yy331;
+		case ':': goto yy289;
+		case ';': goto yy290;
+		case ']': goto yy291;
+		default: goto yy267;
 	}
 yy292:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy326;
-		case ';': goto yy327;
-		case ']': goto yy328;
-		default: goto yy292;
+		case ':': goto yy332;
+		case ';': goto yy293;
+		case ']': goto yy294;
+		default: goto yy268;
 	}
 yy293:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy330;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy292;
+		case ';': goto yy333;
+		case ']': goto yy294;
+		default: goto yy268;
+	}
 yy294:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy333;
-		case ':': goto yy291;
-		case ';': goto yy294;
-		case '[': goto yy292;
-		default: goto yy272;
+		case 0x00: goto yy334;
+		case ':': goto yy292;
+		case ';': goto yy293;
+		case ']': goto yy294;
+		default: goto yy268;
 	}
 yy295:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy334;
+		case ':': goto yy335;
 		case ';': goto yy296;
-		case ']': goto yy297;
-		default: goto yy278;
+		case '[': goto yy297;
+		default: goto yy269;
 	}
 yy296:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
 		case ':': goto yy295;
-		case ';': goto yy335;
-		case ']': goto yy297;
-		default: goto yy278;
+		case ';': goto yy336;
+		case '[': goto yy297;
+		default: goto yy269;
 	}
 yy297:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy336;
-		case ':': goto yy295;
-		case ';': goto yy296;
-		case ']': goto yy297;
-		default: goto yy278;
+		case 0x00: goto yy26;
+		case ':': goto yy337;
+		case ';': goto yy338;
+		case ']': goto yy339;
+		default: goto yy297;
 	}
 yy298:
 	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy340;
+		case ';': goto yy299;
+		case ']': goto yy300;
+		default: goto yy271;
+	}
 yy299:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy300;
-		default: goto yy298;
-	}
-yy300:
-	yych = *++p;
-yy301:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy337;
-		default: goto yy300;
-	}
-yy302:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy339;
-yy303:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy343;
-		case ':': goto yy303;
-		case ';': goto yy282;
-		case '[': goto yy283;
-		default: goto yy264;
-	}
-yy304:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy344;
-		case ':': goto yy281;
-		case ';': goto yy304;
-		case '[': goto yy283;
-		default: goto yy264;
-	}
-yy305:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy345;
-		case ';': goto yy306;
-		case ']': goto yy307;
-		default: goto yy283;
+		case ':': goto yy298;
+		case ';': goto yy341;
+		case ']': goto yy300;
+		default: goto yy271;
 	}
+yy300:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy342;
+		case ':': goto yy298;
+		case ';': goto yy299;
+		case ']': goto yy300;
+		default: goto yy271;
+	}
+yy301:
+	yych = *++p;
+yy302:
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '[': goto yy303;
+		default: goto yy301;
+	}
+yy303:
+	yych = *++p;
+yy304:
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy343;
+		default: goto yy303;
+	}
+yy305:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy345;
 yy306:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy305;
-		case ';': goto yy346;
-		case ']': goto yy307;
-		default: goto yy283;
+		case ':': goto yy349;
+		case ';': goto yy309;
+		case '[': goto yy350;
+		default: goto yy306;
 	}
 yy307:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy347;
-		case ':': goto yy305;
-		case ';': goto yy306;
-		case ']': goto yy307;
-		default: goto yy283;
-	}
 yy308:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy348;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy351;
+		case ':': goto yy307;
 		case ';': goto yy309;
-		case ']': goto yy310;
-		default: goto yy284;
+		case '[': goto yy350;
+		default: goto yy306;
 	}
 yy309:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy308;
-		case ';': goto yy349;
-		case ']': goto yy310;
-		default: goto yy284;
+		case ':': goto yy349;
+		case ';': goto yy352;
+		case '[': goto yy350;
+		default: goto yy306;
 	}
 yy310:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy350;
-		case ':': goto yy308;
-		case ';': goto yy309;
-		case ']': goto yy310;
-		default: goto yy284;
+		case 0x00: goto yy26;
+		case ':': goto yy353;
+		case ';': goto yy311;
+		case ']': goto yy312;
+		default: goto yy276;
 	}
 yy311:
 	yych = *++p;
 	switch (yych) {
 		case 0x00: goto yy26;
-		case ':': goto yy351;
-		case ';': goto yy312;
-		case '[': goto yy313;
-		default: goto yy285;
+		case ':': goto yy310;
+		case ';': goto yy354;
+		case ']': goto yy312;
+		default: goto yy276;
 	}
 yy312:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy311;
-		case ';': goto yy352;
-		case '[': goto yy313;
-		default: goto yy285;
+		case 0x00: goto yy355;
+		case ':': goto yy310;
+		case ';': goto yy311;
+		case ']': goto yy312;
+		default: goto yy276;
 	}
 yy313:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy353;
-		case ';': goto yy354;
-		case ']': goto yy355;
-		default: goto yy313;
-	}
 yy314:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy356;
-		case ';': goto yy315;
-		case ']': goto yy316;
-		default: goto yy287;
+		case 0x00: goto yy114;
+		case '[': goto yy315;
+		default: goto yy313;
 	}
 yy315:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy314;
-		case ';': goto yy357;
-		case ']': goto yy316;
-		default: goto yy287;
-	}
 yy316:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy358;
-		case ':': goto yy314;
-		case ';': goto yy315;
-		case ']': goto yy316;
-		default: goto yy287;
+		case 0x00: goto yy114;
+		case ']': goto yy356;
+		default: goto yy315;
 	}
 yy317:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy358;
 yy318:
+	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy319;
-		default: goto yy317;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy362;
+		case ':': goto yy318;
+		case ';': goto yy280;
+		case ']': goto yy281;
+		default: goto yy262;
 	}
 yy319:
 	yych = *++p;
-yy320:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy359;
-		default: goto yy319;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy363;
+		case ':': goto yy279;
+		case ';': goto yy319;
+		case ']': goto yy281;
+		default: goto yy262;
 	}
+yy320:
+	++p;
+#line 91 "block_scanner.re"
+	{ return AQ_BT_BLOCK_MEDIA; }
+#line 2817 "block_scanner_gen.h"
 yy321:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy361;
+	switch (yych) {
+		case 0x00: goto yy320;
+		case ']': goto yy321;
+		default: goto yy284;
+	}
 yy322:
 	yych = *++p;
+yy323:
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy365;
-		case ';': goto yy325;
-		case '[': goto yy366;
+		case 0x00: goto yy116;
+		case ':': goto yy324;
+		case '[': goto yy325;
 		default: goto yy322;
 	}
-yy323:
-	yych = *++p;
 yy324:
+	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy367;
-		case ':': goto yy323;
-		case ';': goto yy325;
-		case '[': goto yy366;
+		case 0x00: goto yy116;
+		case ':': goto yy364;
+		case '[': goto yy325;
 		default: goto yy322;
 	}
 yy325:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy365;
-		case ';': goto yy368;
-		case '[': goto yy366;
-		default: goto yy322;
-	}
 yy326:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy369;
-		case ';': goto yy327;
-		case ']': goto yy328;
-		default: goto yy292;
+		case 0x00: goto yy116;
+		case ':': goto yy365;
+		case ']': goto yy366;
+		default: goto yy325;
 	}
 yy327:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy326;
-		case ';': goto yy370;
-		case ']': goto yy328;
-		default: goto yy292;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy368;
 yy328:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy371;
-		case ':': goto yy326;
-		case ';': goto yy327;
-		case ']': goto yy328;
-		default: goto yy292;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy372;
 yy329:
 	yych = *++p;
-yy330:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy331;
-		default: goto yy329;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy376;
+		case ':': goto yy329;
+		case ';': goto yy290;
+		case ']': goto yy291;
+		default: goto yy267;
+	}
+yy330:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy377;
+		case ':': goto yy289;
+		case ';': goto yy330;
+		case ']': goto yy291;
+		default: goto yy267;
 	}
 yy331:
-	yych = *++p;
+	++p;
+#line 94 "block_scanner.re"
+	{ return AQ_BT_IFDEF;  }
+#line 2885 "block_scanner_gen.h"
 yy332:
+	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy372;
-		default: goto yy331;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy378;
+		case ':': goto yy332;
+		case ';': goto yy293;
+		case ']': goto yy294;
+		default: goto yy268;
 	}
 yy333:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy374;
-yy334:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
+		case 0x00: goto yy116;
 		case '\t':
-		case ' ': goto yy378;
-		case ':': goto yy334;
-		case ';': goto yy296;
-		case ']': goto yy297;
-		default: goto yy278;
+		case ' ': goto yy379;
+		case ':': goto yy292;
+		case ';': goto yy333;
+		case ']': goto yy294;
+		default: goto yy268;
 	}
+yy334:
+	++p;
+#line 96 "block_scanner.re"
+	{ return AQ_BT_IFEVAL; }
+#line 2912 "block_scanner_gen.h"
 yy335:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy379;
-		case ':': goto yy295;
-		case ';': goto yy335;
-		case ']': goto yy297;
-		default: goto yy278;
+		case ' ': goto yy380;
+		case ':': goto yy335;
+		case ';': goto yy296;
+		case '[': goto yy297;
+		default: goto yy269;
 	}
 yy336:
-	++p;
-#line 91 "block_scanner.re"
-	{ return AQ_BT_BLOCK_MEDIA; }
-#line 3000 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy381;
+		case ':': goto yy295;
+		case ';': goto yy336;
+		case '[': goto yy297;
+		default: goto yy269;
+	}
 yy337:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy336;
-		case ']': goto yy337;
-		default: goto yy300;
+		case 0x00: goto yy26;
+		case ':': goto yy382;
+		case ';': goto yy338;
+		case ']': goto yy339;
+		default: goto yy297;
 	}
 yy338:
 	yych = *++p;
-yy339:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy340;
-		case '[': goto yy341;
-		default: goto yy338;
+		case 0x00: goto yy26;
+		case ':': goto yy337;
+		case ';': goto yy383;
+		case ']': goto yy339;
+		default: goto yy297;
+	}
+yy339:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy384;
+		case ':': goto yy337;
+		case ';': goto yy338;
+		case ']': goto yy339;
+		default: goto yy297;
 	}
 yy340:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy380;
-		case '[': goto yy341;
-		default: goto yy338;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy385;
+		case ':': goto yy340;
+		case ';': goto yy299;
+		case ']': goto yy300;
+		default: goto yy271;
 	}
 yy341:
 	yych = *++p;
-yy342:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy381;
-		case ']': goto yy382;
-		default: goto yy341;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy386;
+		case ':': goto yy298;
+		case ';': goto yy341;
+		case ']': goto yy300;
+		default: goto yy271;
 	}
+yy342:
+	++p;
+#line 87 "block_scanner.re"
+	{ return AQ_BT_BLOCK_IMAGE; }
+#line 2988 "block_scanner_gen.h"
 yy343:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy384;
+	switch (yych) {
+		case 0x00: goto yy342;
+		case ']': goto yy343;
+		default: goto yy303;
+	}
 yy344:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy388;
 yy345:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy392;
-		case ':': goto yy345;
-		case ';': goto yy306;
-		case ']': goto yy307;
-		default: goto yy283;
+		case 0x00: goto yy116;
+		case ':': goto yy346;
+		case '[': goto yy347;
+		default: goto yy344;
 	}
 yy346:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy393;
-		case ':': goto yy305;
-		case ';': goto yy346;
-		case ']': goto yy307;
-		default: goto yy283;
+		case 0x00: goto yy116;
+		case ':': goto yy387;
+		case '[': goto yy347;
+		default: goto yy344;
 	}
 yy347:
-	++p;
-#line 94 "block_scanner.re"
-	{ return AQ_BT_IFDEF;  }
-#line 3068 "block_scanner_gen.h"
-yy348:
 	yych = *++p;
+yy348:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy394;
-		case ':': goto yy348;
-		case ';': goto yy309;
-		case ']': goto yy310;
-		default: goto yy284;
+		case 0x00: goto yy116;
+		case ':': goto yy388;
+		case ']': goto yy389;
+		default: goto yy347;
 	}
 yy349:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy395;
-		case ':': goto yy308;
-		case ';': goto yy349;
-		case ']': goto yy310;
-		default: goto yy284;
+		case 0x00: goto yy26;
+		case ':': goto yy307;
+		case ';': goto yy309;
+		case '[': goto yy350;
+		default: goto yy306;
 	}
 yy350:
-	++p;
-#line 96 "block_scanner.re"
-	{ return AQ_BT_IFEVAL; }
-#line 3095 "block_scanner_gen.h"
-yy351:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy396;
-		case ':': goto yy351;
-		case ';': goto yy312;
-		case '[': goto yy313;
-		default: goto yy285;
+		case 0x00: goto yy26;
+		case ':': goto yy390;
+		case ';': goto yy391;
+		case ']': goto yy392;
+		default: goto yy350;
 	}
+yy351:
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy394;
 yy352:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
+		case 0x00: goto yy116;
 		case '\t':
 		case ' ': goto yy397;
-		case ':': goto yy311;
+		case ':': goto yy349;
 		case ';': goto yy352;
-		case '[': goto yy313;
-		default: goto yy285;
+		case '[': goto yy350;
+		default: goto yy306;
 	}
 yy353:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy398;
-		case ';': goto yy354;
-		case ']': goto yy355;
-		default: goto yy313;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy398;
+		case ':': goto yy353;
+		case ';': goto yy311;
+		case ']': goto yy312;
+		default: goto yy276;
 	}
 yy354:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy353;
-		case ';': goto yy399;
-		case ']': goto yy355;
-		default: goto yy313;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy399;
+		case ':': goto yy310;
+		case ';': goto yy354;
+		case ']': goto yy312;
+		default: goto yy276;
 	}
 yy355:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy400;
-		case ':': goto yy353;
-		case ';': goto yy354;
-		case ']': goto yy355;
-		default: goto yy313;
-	}
+	++p;
+#line 90 "block_scanner.re"
+	{ return AQ_BT_BLOCK_MEDIA; }
+#line 3081 "block_scanner_gen.h"
 yy356:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy401;
-		case ':': goto yy356;
-		case ';': goto yy315;
-		case ']': goto yy316;
-		default: goto yy287;
+		case 0x00: goto yy355;
+		case ']': goto yy356;
+		default: goto yy315;
 	}
 yy357:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy402;
-		case ':': goto yy314;
-		case ';': goto yy357;
-		case ']': goto yy316;
-		default: goto yy287;
-	}
 yy358:
-	++p;
-#line 87 "block_scanner.re"
-	{ return AQ_BT_BLOCK_IMAGE; }
-#line 3171 "block_scanner_gen.h"
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy359;
+		case '[': goto yy360;
+		default: goto yy357;
+	}
 yy359:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy358;
-		case ']': goto yy359;
-		default: goto yy319;
+		case 0x00: goto yy116;
+		case ':': goto yy400;
+		case '[': goto yy360;
+		default: goto yy357;
 	}
 yy360:
 	yych = *++p;
 yy361:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy362;
-		case '[': goto yy363;
+		case 0x00: goto yy116;
+		case ':': goto yy401;
+		case ']': goto yy402;
 		default: goto yy360;
 	}
 yy362:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy403;
-		case '[': goto yy363;
-		default: goto yy360;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy285;
 yy363:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy326;
 yy364:
+	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy404;
-		case ']': goto yy405;
-		default: goto yy363;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy403;
+		case ':': goto yy364;
+		case '[': goto yy325;
+		default: goto yy322;
 	}
 yy365:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy323;
-		case ';': goto yy325;
-		case '[': goto yy366;
-		default: goto yy322;
+		case 0x00: goto yy116;
+		case ':': goto yy404;
+		case ']': goto yy366;
+		default: goto yy325;
 	}
 yy366:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy406;
-		case ';': goto yy407;
-		case ']': goto yy408;
-		default: goto yy366;
+		case 0x00: goto yy320;
+		case ':': goto yy365;
+		case ']': goto yy366;
+		default: goto yy325;
 	}
 yy367:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy410;
 yy368:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy413;
-		case ':': goto yy365;
-		case ';': goto yy368;
-		case '[': goto yy366;
-		default: goto yy322;
+		case 0x00: goto yy114;
+		case '[': goto yy369;
+		default: goto yy367;
 	}
 yy369:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy414;
-		case ':': goto yy369;
-		case ';': goto yy327;
-		case ']': goto yy328;
-		default: goto yy292;
-	}
 yy370:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy415;
-		case ':': goto yy326;
-		case ';': goto yy370;
-		case ']': goto yy328;
-		default: goto yy292;
+		case 0x00: goto yy114;
+		case ']': goto yy405;
+		default: goto yy369;
 	}
 yy371:
-	++p;
-#line 90 "block_scanner.re"
-	{ return AQ_BT_BLOCK_MEDIA; }
-#line 3264 "block_scanner_gen.h"
-yy372:
 	yych = *++p;
+yy372:
 	switch (yych) {
-		case 0x00: goto yy371;
-		case ']': goto yy372;
-		default: goto yy331;
+		case 0x00: goto yy116;
+		case ':': goto yy373;
+		case '[': goto yy374;
+		default: goto yy371;
 	}
 yy373:
 	yych = *++p;
-yy374:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy375;
-		case '[': goto yy376;
-		default: goto yy373;
+		case 0x00: goto yy116;
+		case ':': goto yy406;
+		case '[': goto yy374;
+		default: goto yy371;
 	}
-yy375:
+yy374:
 	yych = *++p;
+yy375:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy416;
-		case '[': goto yy376;
-		default: goto yy373;
+		case 0x00: goto yy116;
+		case ':': goto yy407;
+		case ']': goto yy408;
+		default: goto yy374;
 	}
 yy376:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy370;
 yy377:
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy417;
-		case ']': goto yy418;
-		default: goto yy376;
-	}
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy375;
 yy378:
 	yych = *++p;
 	if (yych <= 0x00) goto yy26;
-	goto yy301;
+	goto yy410;
 yy379:
 	yych = *++p;
 	if (yych <= 0x00) goto yy26;
-	goto yy342;
+	goto yy413;
 yy380:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy419;
-		case ':': goto yy380;
-		case '[': goto yy341;
-		default: goto yy338;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy417;
 yy381:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy420;
-		case ']': goto yy382;
-		default: goto yy341;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy421;
 yy382:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy336;
-		case ':': goto yy381;
-		case ']': goto yy382;
-		default: goto yy341;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy425;
+		case ':': goto yy382;
+		case ';': goto yy338;
+		case ']': goto yy339;
+		default: goto yy297;
 	}
 yy383:
 	yych = *++p;
-yy384:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy385;
-		default: goto yy383;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy426;
+		case ':': goto yy337;
+		case ';': goto yy383;
+		case ']': goto yy339;
+		default: goto yy297;
 	}
+yy384:
+	++p;
+#line 95 "block_scanner.re"
+	{ return AQ_BT_IFNDEF; }
+#line 3241 "block_scanner_gen.h"
 yy385:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy304;
 yy386:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy421;
-		default: goto yy385;
-	}
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy348;
 yy387:
 	yych = *++p;
-yy388:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy389;
-		case '[': goto yy390;
-		default: goto yy387;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy427;
+		case ':': goto yy387;
+		case '[': goto yy347;
+		default: goto yy344;
+	}
+yy388:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy428;
+		case ']': goto yy389;
+		default: goto yy347;
 	}
 yy389:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy422;
-		case '[': goto yy390;
-		default: goto yy387;
+		case 0x00: goto yy342;
+		case ':': goto yy388;
+		case ']': goto yy389;
+		default: goto yy347;
 	}
 yy390:
 	yych = *++p;
-yy391:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy423;
-		case ']': goto yy424;
-		default: goto yy390;
+		case 0x00: goto yy26;
+		case ':': goto yy429;
+		case ';': goto yy391;
+		case ']': goto yy392;
+		default: goto yy350;
+	}
+yy391:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy26;
+		case ':': goto yy390;
+		case ';': goto yy430;
+		case ']': goto yy392;
+		default: goto yy350;
 	}
 yy392:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy386;
+	switch (yych) {
+		case 0x00: goto yy431;
+		case ':': goto yy390;
+		case ';': goto yy391;
+		case ']': goto yy392;
+		default: goto yy350;
+	}
 yy393:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy391;
 yy394:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy426;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '[': goto yy395;
+		default: goto yy393;
+	}
 yy395:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy429;
 yy396:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy433;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy432;
+		default: goto yy395;
+	}
 yy397:
 	yych = *++p;
 	if (yych <= 0x00) goto yy26;
-	goto yy437;
+	goto yy434;
 yy398:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy441;
-		case ':': goto yy398;
-		case ';': goto yy354;
-		case ']': goto yy355;
-		default: goto yy313;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy316;
 yy399:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy442;
-		case ':': goto yy353;
-		case ';': goto yy399;
-		case ']': goto yy355;
-		default: goto yy313;
-	}
+	if (yych <= 0x00) goto yy26;
+	goto yy361;
 yy400:
-	++p;
-#line 95 "block_scanner.re"
-	{ return AQ_BT_IFNDEF; }
-#line 3424 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy438;
+		case ':': goto yy400;
+		case '[': goto yy360;
+		default: goto yy357;
+	}
 yy401:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy320;
-yy402:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy364;
-yy403:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy443;
-		case ':': goto yy403;
-		case '[': goto yy363;
+		case 0x00: goto yy116;
+		case ':': goto yy439;
+		case ']': goto yy402;
 		default: goto yy360;
 	}
+yy402:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy355;
+		case ':': goto yy401;
+		case ']': goto yy402;
+		default: goto yy360;
+	}
+yy403:
+	yych = *++p;
+	if (yych <= 0x00) goto yy116;
+	goto yy283;
 yy404:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy444;
-		case ']': goto yy405;
-		default: goto yy363;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy440;
+		case ':': goto yy404;
+		case ']': goto yy366;
+		default: goto yy325;
 	}
 yy405:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy358;
-		case ':': goto yy404;
+		case 0x00: goto yy331;
 		case ']': goto yy405;
-		default: goto yy363;
+		default: goto yy369;
 	}
 yy406:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy445;
-		case ';': goto yy407;
-		case ']': goto yy408;
-		default: goto yy366;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy441;
+		case ':': goto yy406;
+		case '[': goto yy374;
+		default: goto yy371;
 	}
 yy407:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy26;
-		case ':': goto yy406;
-		case ';': goto yy446;
+		case 0x00: goto yy116;
+		case ':': goto yy442;
 		case ']': goto yy408;
-		default: goto yy366;
+		default: goto yy374;
 	}
 yy408:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy447;
-		case ':': goto yy406;
-		case ';': goto yy407;
+		case 0x00: goto yy331;
+		case ':': goto yy407;
 		case ']': goto yy408;
-		default: goto yy366;
+		default: goto yy374;
 	}
 yy409:
 	yych = *++p;
 yy410:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy411;
+		case 0x00: goto yy114;
+		case ']': goto yy411;
 		default: goto yy409;
 	}
 yy411:
 	yych = *++p;
-yy412:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy448;
-		default: goto yy411;
+		case 0x00: goto yy334;
+		case ']': goto yy411;
+		default: goto yy409;
 	}
-yy413:
+yy412:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy450;
+yy413:
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy414;
+		case ']': goto yy415;
+		default: goto yy412;
+	}
 yy414:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy332;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy443;
+		case ']': goto yy415;
+		default: goto yy412;
+	}
 yy415:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy377;
+	switch (yych) {
+		case 0x00: goto yy334;
+		case ':': goto yy414;
+		case ']': goto yy415;
+		default: goto yy412;
+	}
 yy416:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy454;
-		case ':': goto yy416;
-		case '[': goto yy376;
-		default: goto yy373;
-	}
 yy417:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy455;
-		case ']': goto yy418;
-		default: goto yy376;
+		case 0x00: goto yy114;
+		case '[': goto yy418;
+		default: goto yy416;
 	}
 yy418:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy371;
-		case ':': goto yy417;
-		case ']': goto yy418;
-		default: goto yy376;
-	}
 yy419:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy299;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case ']': goto yy444;
+		default: goto yy418;
+	}
 yy420:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy456;
-		case ':': goto yy420;
-		case ']': goto yy382;
-		default: goto yy341;
-	}
 yy421:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy347;
-		case ']': goto yy421;
-		default: goto yy385;
+		case 0x00: goto yy116;
+		case ':': goto yy422;
+		case '[': goto yy423;
+		default: goto yy420;
 	}
 yy422:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy457;
-		case ':': goto yy422;
-		case '[': goto yy390;
-		default: goto yy387;
+		case 0x00: goto yy116;
+		case ':': goto yy445;
+		case '[': goto yy423;
+		default: goto yy420;
 	}
 yy423:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy458;
-		case ']': goto yy424;
-		default: goto yy390;
-	}
 yy424:
-	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy347;
-		case ':': goto yy423;
-		case ']': goto yy424;
-		default: goto yy390;
+		case 0x00: goto yy116;
+		case ':': goto yy446;
+		case ']': goto yy447;
+		default: goto yy423;
 	}
 yy425:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy419;
 yy426:
-	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy427;
-		default: goto yy425;
-	}
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy424;
 yy427:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy350;
-		case ']': goto yy427;
-		default: goto yy425;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy302;
 yy428:
 	yych = *++p;
-yy429:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy430;
-		case ']': goto yy431;
-		default: goto yy428;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy448;
+		case ':': goto yy428;
+		case ']': goto yy389;
+		default: goto yy347;
+	}
+yy429:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy449;
+		case ':': goto yy429;
+		case ';': goto yy391;
+		case ']': goto yy392;
+		default: goto yy350;
 	}
 yy430:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy459;
-		case ']': goto yy431;
-		default: goto yy428;
+		case 0x00: goto yy116;
+		case '\t':
+		case ' ': goto yy450;
+		case ':': goto yy390;
+		case ';': goto yy430;
+		case ']': goto yy392;
+		default: goto yy350;
 	}
 yy431:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy350;
-		case ':': goto yy430;
-		case ']': goto yy431;
-		default: goto yy428;
-	}
+	++p;
+#line 100 "block_scanner.re"
+	{ return AQ_BT_INCLUDE; }
+#line 3534 "block_scanner_gen.h"
 yy432:
 	yych = *++p;
-yy433:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '[': goto yy434;
-		default: goto yy432;
+		case 0x00: goto yy431;
+		case ']': goto yy432;
+		default: goto yy395;
 	}
-yy434:
+yy433:
 	yych = *++p;
-yy435:
+yy434:
 	switch (yych) {
-		case 0x00: goto yy124;
-		case ']': goto yy460;
-		default: goto yy434;
+		case 0x00: goto yy116;
+		case ':': goto yy435;
+		case '[': goto yy436;
+		default: goto yy433;
+	}
+yy435:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy116;
+		case ':': goto yy451;
+		case '[': goto yy436;
+		default: goto yy433;
 	}
 yy436:
 	yych = *++p;
 yy437:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy438;
-		case '[': goto yy439;
+		case 0x00: goto yy116;
+		case ':': goto yy452;
+		case ']': goto yy453;
 		default: goto yy436;
 	}
 yy438:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy461;
-		case '[': goto yy439;
-		default: goto yy436;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy314;
 yy439:
 	yych = *++p;
-yy440:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy462;
-		case ']': goto yy463;
-		default: goto yy439;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy454;
+		case ':': goto yy439;
+		case ']': goto yy402;
+		default: goto yy360;
 	}
+yy440:
+	yych = *++p;
+	if (yych <= 0x00) goto yy116;
+	goto yy285;
 yy441:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy435;
+	if (yych <= 0x00) goto yy116;
+	goto yy368;
 yy442:
 	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy440;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy455;
+		case ':': goto yy442;
+		case ']': goto yy408;
+		default: goto yy374;
+	}
 yy443:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy318;
+	switch (yych) {
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy456;
+		case ':': goto yy443;
+		case ']': goto yy415;
+		default: goto yy412;
+	}
 yy444:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy464;
-		case ':': goto yy444;
-		case ']': goto yy405;
-		default: goto yy363;
+		case 0x00: goto yy384;
+		case ']': goto yy444;
+		default: goto yy418;
 	}
 yy445:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy465;
+		case ' ': goto yy457;
 		case ':': goto yy445;
-		case ';': goto yy407;
-		case ']': goto yy408;
-		default: goto yy366;
+		case '[': goto yy423;
+		default: goto yy420;
 	}
 yy446:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case '\t':
-		case ' ': goto yy466;
-		case ':': goto yy406;
-		case ';': goto yy446;
-		case ']': goto yy408;
-		default: goto yy366;
+		case 0x00: goto yy116;
+		case ':': goto yy458;
+		case ']': goto yy447;
+		default: goto yy423;
 	}
 yy447:
-	++p;
-#line 100 "block_scanner.re"
-	{ return AQ_BT_INCLUDE; }
-#line 3717 "block_scanner_gen.h"
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy384;
+		case ':': goto yy446;
+		case ']': goto yy447;
+		default: goto yy423;
+	}
 yy448:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy447;
-		case ']': goto yy448;
-		default: goto yy411;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy304;
 yy449:
 	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy396;
 yy450:
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy451;
-		case '[': goto yy452;
-		default: goto yy449;
-	}
+	yych = *++p;
+	if (yych <= 0x00) goto yy26;
+	goto yy437;
 yy451:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy467;
-		case '[': goto yy452;
-		default: goto yy449;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy459;
+		case ':': goto yy451;
+		case '[': goto yy436;
+		default: goto yy433;
 	}
 yy452:
 	yych = *++p;
-yy453:
 	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy468;
-		case ']': goto yy469;
-		default: goto yy452;
+		case 0x00: goto yy116;
+		case ':': goto yy460;
+		case ']': goto yy453;
+		default: goto yy436;
+	}
+yy453:
+	yych = *++p;
+	switch (yych) {
+		case 0x00: goto yy431;
+		case ':': goto yy452;
+		case ']': goto yy453;
+		default: goto yy436;
 	}
 yy454:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy330;
+	if (yych <= 0x00) goto yy116;
+	goto yy316;
 yy455:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy470;
-		case ':': goto yy455;
-		case ']': goto yy418;
-		default: goto yy376;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy370;
 yy456:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy301;
+	if (yych <= 0x00) goto yy116;
+	goto yy410;
 yy457:
 	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy384;
+	if (yych <= 0x00) goto yy116;
+	goto yy417;
 yy458:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy124;
+		case 0x00: goto yy114;
 		case '\t':
-		case ' ': goto yy471;
+		case ' ': goto yy461;
 		case ':': goto yy458;
-		case ']': goto yy424;
-		default: goto yy390;
+		case ']': goto yy447;
+		default: goto yy423;
 	}
 yy459:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy472;
-		case ':': goto yy459;
-		case ']': goto yy431;
-		default: goto yy428;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy394;
 yy460:
 	yych = *++p;
 	switch (yych) {
-		case 0x00: goto yy400;
-		case ']': goto yy460;
-		default: goto yy434;
+		case 0x00: goto yy114;
+		case '\t':
+		case ' ': goto yy462;
+		case ':': goto yy460;
+		case ']': goto yy453;
+		default: goto yy436;
 	}
 yy461:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy473;
-		case ':': goto yy461;
-		case '[': goto yy439;
-		default: goto yy436;
-	}
+	if (yych <= 0x00) goto yy116;
+	goto yy419;
 yy462:
 	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy474;
-		case ']': goto yy463;
-		default: goto yy439;
-	}
-yy463:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy400;
-		case ':': goto yy462;
-		case ']': goto yy463;
-		default: goto yy439;
-	}
-yy464:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy320;
-yy465:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy412;
-yy466:
-	yych = *++p;
-	if (yych <= 0x00) goto yy26;
-	goto yy453;
-yy467:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy475;
-		case ':': goto yy467;
-		case '[': goto yy452;
-		default: goto yy449;
-	}
-yy468:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy126;
-		case ':': goto yy476;
-		case ']': goto yy469;
-		default: goto yy452;
-	}
-yy469:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy447;
-		case ':': goto yy468;
-		case ']': goto yy469;
-		default: goto yy452;
-	}
-yy470:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy332;
-yy471:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy386;
-yy472:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy426;
-yy473:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy433;
-yy474:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy477;
-		case ':': goto yy474;
-		case ']': goto yy463;
-		default: goto yy439;
-	}
-yy475:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy410;
-yy476:
-	yych = *++p;
-	switch (yych) {
-		case 0x00: goto yy124;
-		case '\t':
-		case ' ': goto yy478;
-		case ':': goto yy476;
-		case ']': goto yy469;
-		default: goto yy452;
-	}
-yy477:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy435;
-yy478:
-	yych = *++p;
-	if (yych <= 0x00) goto yy126;
-	goto yy412;
+	if (yych <= 0x00) goto yy116;
+	goto yy396;
 }
-#line 181 "block_scanner.re"
+#line 179 "block_scanner.re"
 
 }

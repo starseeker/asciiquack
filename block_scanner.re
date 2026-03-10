@@ -140,17 +140,14 @@ static AqBlockToken aq_classify_line(const char *p, size_t len)
     "<" (DIG+ | ".") ">" WS+ NWSE ANY* EOL { return AQ_BT_LIST_CALLOUT; }
 
     /* ── Ordered list items ─────────────────────────────────────────────── */
-    /* Auto-numbered dots: .{1,5} WS text */
-    WS* "."{1,5} WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
+    /* Auto-numbered dots: one or more dots (PCRE2 uses \.*\. = 1+ dots) */
+    WS* "."+  WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
     /* Numeric: 1. text */
     WS* DIG+ "." WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
     /* Alpha with period: a. text */
     WS* AZ "." WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
     /* Roman numeral with paren: i) I) xiv) etc. */
     WS* [IVXivx]+ ")" WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
-    /* Alpha with paren: a) text */
-    WS* AZ ")" WS+ NWSE ANY* EOL { return AQ_BT_LIST_ORD; }
-
     /* ── Unordered list items ────────────────────────────────────────────── */
     WS* "-"      WS+ NWSE ANY* EOL { return AQ_BT_LIST_UNORD; }
     WS* "*"{1,5} WS+ NWSE ANY* EOL { return AQ_BT_LIST_UNORD; }
@@ -172,8 +169,9 @@ static AqBlockToken aq_classify_line(const char *p, size_t len)
     ";;" WS+ ANY+ EOL          { return AQ_BT_LIST_DESCRIPT; }
     ";;" EOL                   { return AQ_BT_LIST_DESCRIPT; }
     /* Non-empty-term forms: at least one non-WS char before the separator */
-    NWSE ANY* "::" ":"{0,2} (WS+ ANY+)? EOL { return AQ_BT_LIST_DESCRIPT; }
-    NWSE ANY* ";;"              (WS+ ANY+)? EOL { return AQ_BT_LIST_DESCRIPT; }
+    /* Allow optional leading whitespace (PCRE2 uses ^([ \t]*)([^ \t].*?)...) */
+    WS* NWSE ANY* "::" ":"{0,2} (WS+ ANY+)? EOL { return AQ_BT_LIST_DESCRIPT; }
+    WS* NWSE ANY* ";;"              (WS+ ANY+)? EOL { return AQ_BT_LIST_DESCRIPT; }
 
     /* ── Default: ordinary text ─────────────────────────────────────────── */
     * { return AQ_BT_TEXT; }

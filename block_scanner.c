@@ -331,7 +331,10 @@ static AqBlockScanResult extract_list_descript(const char *line, size_t len)
     const char *p  = line;
     const char *pe = line + len;
 
-    /* Find the separator: first occurrence of "::{1,3}" or ";;" */
+    /* Skip leading whitespace – description list items may be indented.
+     * The PCRE2 pattern uses ^([ \t]*)([^ \t].*?)... so the captured term
+     * starts at the first non-whitespace character. */
+    p = skip_ws(p, pe);
     const char *sep = NULL;
     size_t sep_len  = 0;
 
