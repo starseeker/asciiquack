@@ -196,6 +196,91 @@ patterns require features RE2 intentionally omits:
 
 PCRE2 is equally fast and supports the full pattern set.
 
+### re2c + lemon: block-level scanner and attribute-list parser
+
+AsciiDoc's **block-level grammar is regular / context-free** and therefore
+fully amenable to re2c and lemon:
+
+| Layer | Tool | File(s) | What it replaces |
+|---|---|---|---|
+| Block-line lexer | [re2c](https://skvadrik.github.io/re2c/) | `block_scanner.re` → `block_scanner_gen.h` | `aqrx::regex` for every block-level classification pattern in `parser.cpp` |
+| Attr-list parser | [lemon](https://github.com/BRL-CAD/lemon) | `attr_list.lemon` → `attr_list_gen.c` | hand-written `parse_attribute_list()` in `parser.cpp` |
+
+**Key findings:**
+
+- All block-level patterns are regular and can be expressed as re2c rules
+  without backreferences or lookaheads, with one exception: the
+  Markdown-style thematic-break pattern `([-*_])( *)\1\2\1`.  That
+  backreference is trivially resolved by a 10-line C helper
+  (`is_thematic_break` in `block_scanner.c`) that runs before the DFA; the
+  re2c scanner itself has no non-regular patterns.
+
+- The comment-line guard `(?!//[^/])` on description lists is satisfied by
+  placing the comment rules *before* the description-list rule; re2c's
+  longest-match / first-match semantics then ensure comment lines never
+  reach the description-list rule.
+
+- The AsciiDoc block-attribute list `[positional, key=value, "quoted"]` is
+  an LALR(1) language and is parsed correctly by the lemon grammar.
+
+**Build integration:**
+
+- Pre-generated files (`block_scanner_gen.h`, `attr_list_gen.c`) are
+  committed so that neither re2c nor lemon is required at build time.
+
+- When re2c / lemon are found (`USE_RE2C=ON`, `USE_LEMON=ON`, both default),
+  CMake adds custom commands to regenerate the pre-generated files from their
+  sources whenever the sources change.
+
+- The scanner is compiled into every build unconditionally.  The
+  `ASCIIQUACK_USE_SCANNER` definition gates the test helpers and the
+  `#include` of the C headers from C++ code.
+
+- **`USE_SCANNER_PARSER=ON`** wires the scanner and lemon parser into the hot
+  path: `try_parse_attribute_entry`, `match_list_item`, `match_block_image`,
+  `match_block_media`, `is_thematic_break`, `parse_attribute_list`, and
+  `section_title_text` all delegate to the scanner instead of PCRE2.
+  Default is OFF so existing PCRE2 behavior is unchanged.
+
+**Corpus validation against BRL-CAD documentation (532 .adoc files):**
+
+```
+scripts/compare_brlcad.sh
+  Identical:     532 / 532
+  Differing:     0
+```
+
+Scanner-parser output is **bit-for-bit identical** to PCRE2 output across
+the full BRL-CAD documentation corpus (both HTML5 and man-page output).
+
+**Benchmark results** (`build_regex/bench_asciiquack` vs
+`build_scanner/bench_asciiquack`, 500 iterations, Release build, system
+PCRE2 10.42 with JIT):
+
+| Input | PCRE2 (regex) | re2c/lemon (scanner) | Speedup |
+|---|---|---|---|
+| `mdbasics.adoc` (335 lines) | 0.82 ms/iter | 0.43 ms/iter | **1.9×** |
+| BRL-CAD corpus (532 files) | 733 µs/file | 427 µs/file | **1.7×** |
+
+The scanner eliminates all PCRE2 calls for block-level classification; only
+inline markup patterns remain on the PCRE2 path.  To build and run:
+
+```bash
+# Scanner-parser variant:
+mkdir build_scanner && cd build_scanner
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON
+cmake --build . -j4
+./bench_asciiquack /path/to/brlcad/doc/asciidoc 20
+
+# Corpus correctness check:
+bash scripts/compare_brlcad.sh
+```
+
+**Inline markup:** The patterns in `substitutors.hpp` use lookaheads
+(`(?=[^*\w]|$)`) and backreferences.  These are not regular and must remain
+on the PCRE2 path.  A future avenue is to replace them with a hand-written
+multi-pass inline scanner that handles markup as a single DFA traversal.
+
 ### Remaining opportunity
 
 - **`shared_ptr` → `unique_ptr`** – The AST is a strict ownership tree;
