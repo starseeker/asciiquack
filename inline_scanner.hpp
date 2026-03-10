@@ -34,7 +34,7 @@
 ///   - Non-greedy matching is achieved by returning the *first* closing
 ///     marker position that passes all constraints.
 ///
-/// This gives O(n) throughput per call (amortised; worst case O(n²) for
+/// This gives O(n) throughput per call (amortized; worst case O(n²) for
 /// degenerate inputs with many unmatched markers, which do not appear in
 /// practice).  Compared with the 13-regex chain in sub_quotes(), which
 /// makes 13 linear passes over the string with PCRE2, the scanner makes
@@ -79,7 +79,7 @@ namespace asciiquack {
 
     const sz  n = text.size();
     std::string out;
-    out.reserve(n + n / 4);  // 25 % overhead estimate for HTML tags
+    out.reserve(n + n / 4);  // 25% overhead estimate for HTML tags
 
     // ── Character-class helpers ───────────────────────────────────────────────
 
