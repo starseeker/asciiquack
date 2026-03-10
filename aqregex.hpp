@@ -24,6 +24,13 @@
 ///   - Positive lookahead       e.g. (?=[^*\w]|$)
 ///   - Negative lookahead       e.g. (?!//[^/])
 ///
+/// BRL-CAD/regex (Henry Spencer's POSIX ERE/BRE engine) was also evaluated
+/// and found unsuitable.  It lacks: lookahead assertions ((?=…) / (?!…)),
+/// non-greedy quantifiers (*? +?), non-capturing groups (?:…), \w/\d/\s
+/// shorthand classes, and a built-in substitution function.  It also offers
+/// no performance improvement over the std::regex fallback.
+/// See TODO.md ("Why not BRL-CAD/regex?") for a detailed itemisation.
+///
 /// Public interface (namespace aqrx):
 ///   aqrx::regex            – compiled pattern
 ///   aqrx::smatch           – match result (groups + position/length)
