@@ -17,13 +17,11 @@
 #include "reader.hpp"
 #include "substitutors.hpp"
 
-// re2c block scanner and lemon attr-list parser (C API, guarded by build flag)
-#ifdef ASCIIQUACK_USE_SCANNER
+// Block-line scanner and attribute-list parser (C API — always available).
 extern "C" {
 #include "block_scanner.h"
 #include "attr_list.h"
 }
-#endif
 
 #include <cassert>
 #include <cstdio>
@@ -815,6 +813,80 @@ static void test_html5_inline_image_alt() {
     EXPECT_CONTAINS(out, "icon.png");
     EXPECT_CONTAINS(out, "alt=\"the icon\"");
     EXPECT_CONTAINS(out, "width=\"32\"");
+    end_test();
+}
+
+static void test_html5_inline_image_url_not_wrapped() {
+    // Regression: inline image with a URL target must NOT wrap the src in
+    // an <a href="..."> anchor tag.  The old PCRE2 pipeline expanded the URL
+    // as a link macro before placing it in the src attribute, producing broken
+    // HTML like <img src="<a href="http://…">http://…</a>">.
+    begin_test("html5: inline image with URL target – src not wrapped in anchor");
+    std::string out = html("See image:http://example.com/logo.png[,width=64] here.\n");
+    EXPECT_CONTAINS(out, "src=\"http://example.com/logo.png\"");
+    EXPECT(out.find("<a href=") == std::string::npos ||
+           out.find("src=\"<a") == std::string::npos);
+    end_test();
+}
+
+static void test_html5_nested_bold_italic() {
+    begin_test("html5: italic inside bold (*bold _italic_ text*)");
+    std::string out = html("*bold _italic_ text*\n");
+    EXPECT_CONTAINS(out, "<strong>bold <em>italic</em> text</strong>");
+    end_test();
+}
+
+static void test_html5_nested_italic_bold() {
+    begin_test("html5: bold inside italic (_italic *bold* text_)");
+    std::string out = html("_italic *bold* text_\n");
+    EXPECT_CONTAINS(out, "<em>italic <strong>bold</strong> text</em>");
+    end_test();
+}
+
+static void test_html5_italic_inside_backtick() {
+    // Asciidoctor applies the quotes substitution inside `backtick` spans,
+    // so _italic_ inside `code` renders as <em> inside <code>.
+    begin_test("html5: italic inside backtick span (`code _var_`)");
+    {
+        std::string out = html("`cmd _arg_`\n");
+        EXPECT_CONTAINS(out, "<code>cmd <em>arg</em></code>");
+    }
+    {
+        // BRL-CAD gcv.adoc pattern
+        std::string out = html("`gcv_ _plugin_name_`\n");
+        EXPECT_CONTAINS(out, "<code>gcv_ <em>plugin_name</em></code>");
+    }
+    {
+        // Option table pattern from BRL-CAD books
+        std::string out = html("`--colors=_path_`\n");
+        EXPECT_CONTAINS(out, "<code>--colors=<em>path</em></code>");
+    }
+    end_test();
+}
+
+static void test_html5_brlcad_option_style() {
+    // BRL-CAD man-page convention: *-flag _metavar_* in a list item.
+    // This must render the metavar in italic inside the bold span.
+    begin_test("html5: BRL-CAD option style (*-i _input_file_*)");
+    std::string out = html("* *-i _input_file_* - sets input file.\n");
+    EXPECT_CONTAINS(out, "<strong>-i <em>input_file</em></strong>");
+    end_test();
+}
+
+static void test_html5_block_image_alt_stem() {
+    // Block image with no positional alt must derive the alt from the
+    // filename stem (matching asciidoctor), not the full path.
+    begin_test("html5: block image no-alt uses filename stem");
+    {
+        std::string out = html("image::../articles/images/gcv_arch.png[]\n");
+        EXPECT_CONTAINS(out, "alt=\"gcv_arch\"");
+        EXPECT(out.find("alt=\"../articles") == std::string::npos);
+    }
+    {
+        // URL targets: stem is everything after the last '/'
+        std::string out = html("image::http://example.com/logo.png[]\n");
+        EXPECT_CONTAINS(out, "alt=\"logo\"");
+    }
     end_test();
 }
 
@@ -6028,11 +6100,261 @@ static void test_html_verbatim_trailing_space_stripped() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// re2c block scanner tests
+// inline_scanner.hpp unit tests
 // ─────────────────────────────────────────────────────────────────────────────
-#ifdef ASCIIQUACK_USE_SCANNER
+// These tests call sub_quotes() directly so they exercise the scanner path
+// when ASCIIQUACK_USE_INLINE_SCANNER is defined, and the regex path otherwise.
+// A separate #ifdef block exercises scan_inline_quotes() directly.
 
-/// Helper: classify a line with the re2c scanner and return the token type.
+static void test_inline_scanner_unconstrained() {
+    begin_test("inline scanner: unconstrained markup patterns");
+
+    // **bold**
+    EXPECT_EQ(asciiquack::sub_quotes("**bold**"), "<strong>bold</strong>");
+    // __italic__
+    EXPECT_EQ(asciiquack::sub_quotes("__italic__"), "<em>italic</em>");
+    // ``mono``
+    EXPECT_EQ(asciiquack::sub_quotes("``mono``"), "<code>mono</code>");
+    // ##highlight##
+    EXPECT_EQ(asciiquack::sub_quotes("##hi##"), "<mark>hi</mark>");
+    // ^^sup^^
+    EXPECT_EQ(asciiquack::sub_quotes("^^sup^^"), "<sup>sup</sup>");
+    // ~~sub~~
+    EXPECT_EQ(asciiquack::sub_quotes("~~sub~~"), "<sub>sub</sub>");
+
+    // Multiple unconstrained spans in one string
+    EXPECT_EQ(asciiquack::sub_quotes("**a** and **b**"),
+              "<strong>a</strong> and <strong>b</strong>");
+
+    // Unconstrained with no boundary restriction – spans at start/end of word
+    EXPECT_EQ(asciiquack::sub_quotes("un**be**lievable"),
+              "un<strong>be</strong>lievable");
+
+    // Unconstrained empty-content falls through to constrained:
+    // **** → unconstrained ** fails (content would be empty), constrained matches
+    // content "**" giving <strong>**</strong>
+    EXPECT_EQ(asciiquack::sub_quotes("****"), "<strong>**</strong>");
+
+    end_test();
+}
+
+static void test_inline_scanner_constrained() {
+    begin_test("inline scanner: constrained markup patterns");
+
+    // *bold*
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*"), "<strong>bold</strong>");
+    // _italic_
+    EXPECT_EQ(asciiquack::sub_quotes("_italic_"), "<em>italic</em>");
+    // `mono`
+    EXPECT_EQ(asciiquack::sub_quotes("`mono`"), "<code>mono</code>");
+    // +legacy+
+    EXPECT_EQ(asciiquack::sub_quotes("+legacy+"), "<code>legacy</code>");
+    // #highlight# with alphanumeric content
+    EXPECT_EQ(asciiquack::sub_quotes("#hi#"), "<mark>hi</mark>");
+    // ^super^
+    EXPECT_EQ(asciiquack::sub_quotes("^sup^"), "<sup>sup</sup>");
+    // ~sub~
+    EXPECT_EQ(asciiquack::sub_quotes("~sub~"), "<sub>sub</sub>");
+
+    // No match: content starts with whitespace
+    EXPECT_EQ(asciiquack::sub_quotes("* bold*"), "* bold*");
+    // No match: content ends with whitespace
+    EXPECT_EQ(asciiquack::sub_quotes("*bold *"), "*bold *");
+
+    end_test();
+}
+
+static void test_inline_scanner_boundaries() {
+    begin_test("inline scanner: boundary conditions");
+
+    // Preceding word character must suppress constrained bold
+    EXPECT_EQ(asciiquack::sub_quotes("a*bold*b"), "a*bold*b");  // 'a' before '*'
+    // Preceding '*' suppresses constrained bold
+    EXPECT_EQ(asciiquack::sub_quotes("**"), "**");
+
+    // URL protection: '/' before '*' suppresses constrained bold (Bug #4)
+    EXPECT_EQ(asciiquack::sub_quotes("https://*host*/path"),
+              "https://*host*/path");
+    // Colon before '*' also suppresses (Bug #4)
+    EXPECT_EQ(asciiquack::sub_quotes("opt:*val*"), "opt:*val*");
+
+    // Following alphanumeric suppresses close boundary
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*only"), "*bold*only");
+
+    // Adjacent spans: close '*' followed by '_' is valid close boundary
+    EXPECT_EQ(asciiquack::sub_quotes("*bold*_italic_"),
+              "<strong>bold</strong><em>italic</em>");
+
+    // Adjacent: _italic_ followed by *bold*
+    EXPECT_EQ(asciiquack::sub_quotes("_foo_*bar*"),
+              "<em>foo</em><strong>bar</strong>");
+
+    // Constrained #: content must start/end with alnum
+    EXPECT_EQ(asciiquack::sub_quotes("#hi#"), "<mark>hi</mark>");
+    // Non-alphanumeric start must not match constrained #
+    EXPECT_EQ(asciiquack::sub_quotes("#/#"), "#/#");
+    // Non-alphanumeric end must not match constrained #
+    EXPECT_EQ(asciiquack::sub_quotes("#a,#"), "#a,#");
+
+    // ^/~ with whitespace in content must not match
+    EXPECT_EQ(asciiquack::sub_quotes("^a b^"), "^a b^");
+    EXPECT_EQ(asciiquack::sub_quotes("~a b~"), "~a b~");
+
+    end_test();
+}
+
+static void test_inline_scanner_unconstrained_fallthrough() {
+    begin_test("inline scanner: unconstrained failure falls through to constrained");
+
+    // **bold* : unconstrained ** has no ** close; constrained * should still match
+    // (the regex pipeline also produces <strong>*bold</strong> here because
+    //  **..** fails and then *..*  matches starting at position 0)
+    EXPECT_EQ(asciiquack::sub_quotes("**bold*"),
+              "<strong>*bold</strong>");
+
+    // __italic_ : same pattern with _
+    EXPECT_EQ(asciiquack::sub_quotes("__italic_"),
+              "<em>_italic</em>");
+
+    // ^^super^ : unconstrained ^^ fails, constrained ^ matches (content = ^super)
+    EXPECT_EQ(asciiquack::sub_quotes("^^super^"),
+              "<sup>^super</sup>");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline scanner direct tests
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct unit tests for scan_inline_quotes() — hand-written scanner is always active.
+static void test_inline_scanner_direct() {
+    begin_test("inline scanner: scan_inline_quotes() direct unit tests");
+
+    // All 13 pattern types
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**b**"),   "<strong>b</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__i__"),   "<em>i</em>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("``m``"),   "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("##h##"),   "<mark>h</mark>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^^s^^"),   "<sup>s</sup>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("~~u~~"),   "<sub>u</sub>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*b*"),     "<strong>b</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_i_"),     "<em>i</em>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`m`"),     "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("+m+"),     "<code>m</code>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#h#"),     "<mark>h</mark>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^s^"),     "<sup>s</sup>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("~u~"),     "<sub>u</sub>");
+
+    // Unconstrained spans with multi-character content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**bold text**"),
+              "<strong>bold text</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__italic text__"),
+              "<em>italic text</em>");
+
+    // Multiple spans
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*a* and *b*"),
+              "<strong>a</strong> and <strong>b</strong>");
+
+    // Constrained: single-char content (regression for \S alternate)
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*x*"), "<strong>x</strong>");
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_x_"), "<em>x</em>");
+
+    // Constrained: multi-word content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*some bold text*"),
+              "<strong>some bold text</strong>");
+
+    // find_hash_close: newline aborts
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#hi\n#"), "#hi\n#");
+    // find_hash_close: '#' in content: the close at position 2 would have
+    // 'b' after it (alphanumeric), so the close boundary fails → no match
+    EXPECT_EQ(asciiquack::scan_inline_quotes("#a#b#"), "#a#b#");
+
+    // find_nowhitespace_close: tab in content aborts
+    EXPECT_EQ(asciiquack::scan_inline_quotes("^a\tb^"), "^a\tb^");
+
+    // Unconstrained empty-content falls through to constrained:
+    // **** → unconstrained ** fails (empty content), constrained matches ** as content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("****"),   "<strong>**</strong>");
+    // Same for __: unconstrained __ fails, constrained _ matches __ as content
+    EXPECT_EQ(asciiquack::scan_inline_quotes("____"),   "<em>__</em>");
+
+    // Pass-through of unmarked text
+    EXPECT_EQ(asciiquack::scan_inline_quotes("plain text"), "plain text");
+    EXPECT_EQ(asciiquack::scan_inline_quotes(""), "");
+
+    end_test();
+}
+
+static void test_inline_scanner_nested_spans() {
+    begin_test("inline scanner: nested span markup (recursive content processing)");
+
+    // Bold containing italic: *bold _italic_ text*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*bold _italic_ text*"),
+              "<strong>bold <em>italic</em> text</strong>");
+
+    // Italic containing bold: _italic *bold* text_
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_italic *bold* text_"),
+              "<em>italic <strong>bold</strong> text</em>");
+
+    // Double-bold containing italic: **bold _italic_ text**
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**bold _italic_ text**"),
+              "<strong>bold <em>italic</em> text</strong>");
+
+    // Double-italic containing bold: __italic *bold* text__
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__italic *bold* text__"),
+              "<em>italic <strong>bold</strong> text</em>");
+
+    // BRL-CAD man-page option style: *-e _script_*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*-e _script_*"),
+              "<strong>-e <em>script</em></strong>");
+
+    // BRL-CAD option with path: *-i _input_file_*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*-i _input_file_*"),
+              "<strong>-i <em>input_file</em></strong>");
+
+    end_test();
+}
+
+static void test_inline_scanner_code_inner_subs() {
+    begin_test("inline scanner: inline markup inside backtick code spans");
+
+    // Asciidoctor applies the quotes substitution inside `backtick` spans.
+    // `code _var_` → <code>code <em>var</em></code>
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd _arg_`"),
+              "<code>cmd <em>arg</em></code>");
+
+    // Bold inside backtick
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd *val*`"),
+              "<code>cmd <strong>val</strong></code>");
+
+    // Nested bold+italic inside backtick
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd *bold _italic_ end*`"),
+              "<code>cmd <strong>bold <em>italic</em> end</strong></code>");
+
+    // Double-backtick also applies substitutions
+    EXPECT_EQ(asciiquack::scan_inline_quotes("``code _var_``"),
+              "<code>code <em>var</em></code>");
+
+    // BRL-CAD gcv.adoc pattern: `gcv_ _plugin_name_`
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`gcv_ _plugin_name_`"),
+              "<code>gcv_ <em>plugin_name</em></code>");
+
+    // BRL-CAD option table: `--colors=_path_`
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`--colors=_path_`"),
+              "<code>--colors=<em>path</em></code>");
+
+    // Plus-mono is verbatim (NOT a code span; legacy passthrough behaviour)
+    EXPECT_EQ(asciiquack::scan_inline_quotes("+cmd _arg_+"),
+              "<code>cmd _arg_</code>");
+
+    end_test();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hand-written block scanner tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Helper: classify a line with the block scanner and return the token type.
 static AqBlockToken scanner_type(const char *line) {
     return aq_scan_block_line(line, std::strlen(line)).type;
 }
@@ -6045,7 +6367,7 @@ static std::string scanner_cap(const char *line, int idx) {
 }
 
 static void test_block_scanner_types() {
-    begin_test("re2c block scanner: line-type classification");
+    begin_test("block scanner: line-type classification");
 
     EXPECT_EQ(AQ_BT_BLANK,         scanner_type(""));
     EXPECT_EQ(AQ_BT_BLANK,         scanner_type("   "));
@@ -6135,7 +6457,7 @@ static void test_block_scanner_types() {
 }
 
 static void test_block_scanner_captures() {
-    begin_test("re2c block scanner: capture extraction");
+    begin_test("block scanner: capture extraction");
 
     /* Attribute entry */
     EXPECT_EQ(std::string("my-attr"),  scanner_cap(":my-attr: hello", 0));
@@ -6194,24 +6516,9 @@ static void test_block_scanner_captures() {
     end_test();
 }
 
-#else /* !ASCIIQUACK_USE_SCANNER */
-
-static void test_block_scanner_types() {
-    begin_test("re2c block scanner: line-type classification");
-    /* Scanner not compiled; skip. */
-    end_test();
-}
-static void test_block_scanner_captures() {
-    begin_test("re2c block scanner: capture extraction");
-    end_test();
-}
-
-#endif /* ASCIIQUACK_USE_SCANNER */
-
 // ─────────────────────────────────────────────────────────────────────────────
-// lemon attr-list parser tests
+// Attr-list parser tests
 // ─────────────────────────────────────────────────────────────────────────────
-#ifdef ASCIIQUACK_USE_SCANNER
 
 /* Helper: parse content and collect results. */
 static std::vector<std::pair<std::string,std::string>>
@@ -6229,7 +6536,7 @@ parse_attrs(const char *content) {
 }
 
 static void test_attr_list_positional() {
-    begin_test("lemon attr-list parser: positional attributes");
+    begin_test("attr-list parser: positional attributes");
 
     auto attrs = parse_attrs("source,java");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6251,7 +6558,7 @@ static void test_attr_list_positional() {
 }
 
 static void test_attr_list_named() {
-    begin_test("lemon attr-list parser: named attributes");
+    begin_test("attr-list parser: named attributes");
 
     auto attrs = parse_attrs("id=myid,title=The Title");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6266,7 +6573,7 @@ static void test_attr_list_named() {
 }
 
 static void test_attr_list_mixed() {
-    begin_test("lemon attr-list parser: mixed positional + named");
+    begin_test("attr-list parser: mixed positional + named");
 
     auto attrs = parse_attrs("source,java,linenums,start=10");
     EXPECT_EQ(std::size_t(4), attrs.size());
@@ -6285,7 +6592,7 @@ static void test_attr_list_mixed() {
 }
 
 static void test_attr_list_quoted() {
-    begin_test("lemon attr-list parser: quoted values");
+    begin_test("attr-list parser: quoted values");
 
     auto attrs = parse_attrs("id=\"my anchor\",title=\"The Title\"");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6300,7 +6607,7 @@ static void test_attr_list_quoted() {
 }
 
 static void test_attr_list_empty() {
-    begin_test("lemon attr-list parser: empty input");
+    begin_test("attr-list parser: empty input");
 
     auto attrs = parse_attrs("");
     EXPECT_EQ(std::size_t(0), attrs.size());
@@ -6311,7 +6618,7 @@ static void test_attr_list_empty() {
 static void test_attr_list_positional_spaces() {
     // Unquoted positional values may contain spaces: [A photo] → 1="A photo"
     // This mirrors the PCRE2 path which splits only on commas.
-    begin_test("lemon attr-list parser: unquoted positional value with spaces");
+    begin_test("attr-list parser: unquoted positional value with spaces");
 
     auto attrs = parse_attrs("A photo");
     EXPECT_EQ(std::size_t(1), attrs.size());
@@ -6325,7 +6632,7 @@ static void test_attr_list_positional_spaces() {
 
 static void test_attr_list_multi_positional_with_spaces() {
     // [quote, Mike Muuss] → 1=quote, 2="Mike Muuss"
-    begin_test("lemon attr-list parser: multi-positional with spaces");
+    begin_test("attr-list parser: multi-positional with spaces");
 
     auto attrs = parse_attrs("quote, Mike Muuss");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6339,39 +6646,165 @@ static void test_attr_list_multi_positional_with_spaces() {
     end_test();
 }
 
-#else /* !ASCIIQUACK_USE_SCANNER */
 
-static void test_attr_list_positional() {
-    begin_test("lemon attr-list parser: positional attributes");
-    end_test();
-}
-static void test_attr_list_named() {
-    begin_test("lemon attr-list parser: named attributes");
-    end_test();
-}
-static void test_attr_list_mixed() {
-    begin_test("lemon attr-list parser: mixed positional + named");
-    end_test();
-}
-static void test_attr_list_quoted() {
-    begin_test("lemon attr-list parser: quoted values");
-    end_test();
-}
-static void test_attr_list_empty() {
-    begin_test("lemon attr-list parser: empty input");
-    end_test();
-}
-static void test_attr_list_positional_spaces() {
-    begin_test("lemon attr-list parser: unquoted positional value with spaces");
-    end_test();
-}
-static void test_attr_list_multi_positional_with_spaces() {
-    begin_test("lemon attr-list parser: multi-positional with spaces");
+// ─────────────────────────────────────────────────────────────────────────────
+// BRL-CAD compatibility tests
+// These tests verify that the AsciiDoc patterns used by BRL-CAD documentation
+// are correctly handled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_brlcad_block_image_no_alt_uses_stem() {
+    begin_test("BRL-CAD compat: block image with no alt text uses filename stem");
+    // BRL-CAD files use image::path/to/foo.png[] with no alt text.
+    // asciidoctor derives the default alt from the stem of the filename.
+    std::string out = html("image::path/to/gcv_architecture.png[]\n");
+    EXPECT_CONTAINS(out, "alt=\"gcv_architecture\"");
+    EXPECT_NOT_CONTAINS(out, "alt=\"path/to/gcv_architecture.png\"");
     end_test();
 }
 
-#endif /* ASCIIQUACK_USE_SCANNER */
+static void test_brlcad_block_image_no_alt_no_path() {
+    begin_test("BRL-CAD compat: block image with no alt text and no path uses stem");
+    std::string out = html("image::photo.png[]\n");
+    EXPECT_CONTAINS(out, "alt=\"photo\"");
+    EXPECT_NOT_CONTAINS(out, "alt=\"photo.png\"");
+    end_test();
+}
 
+static void test_brlcad_block_image_explicit_alt_preserved() {
+    begin_test("BRL-CAD compat: block image with explicit alt text preserves it");
+    std::string out = html("image::photo.png[A beautiful photo]\n");
+    EXPECT_CONTAINS(out, "alt=\"A beautiful photo\"");
+    end_test();
+}
+
+static void test_brlcad_manpage_example_block() {
+    begin_test("BRL-CAD compat: manpage example block renders as indented example");
+    // BRL-CAD man pages use [example] blocks with a titled caption.
+    const std::string src =
+        "= 3DM-G(1)\n"
+        ":doctype: manpage\n"
+        ":mansource: BRL-CAD\n"
+        ":manmanual: User Commands\n"
+        "\n"
+        "== NAME\n"
+        "3dm-g - Rhinoceros 3D Translator\n"
+        "\n"
+        "== SYNOPSIS\n"
+        "3dm-g [-r] file.3dm\n"
+        "\n"
+        "== EXAMPLE\n"
+        "\n"
+        ".Verbose Reporting\n"
+        "[example]\n"
+        "====\n"
+        "mged>*3dm-g -r nist.g*\n"
+        "\n"
+        "This converts the file.\n"
+        "====\n";
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+    EXPECT_CONTAINS(out, ".SH EXAMPLE");
+    EXPECT_CONTAINS(out, "Verbose Reporting");
+    EXPECT_CONTAINS(out, "3dm");
+    EXPECT_CONTAINS(out, "This converts the file.");
+    end_test();
+}
+
+static void test_brlcad_article_note_admonition() {
+    begin_test("BRL-CAD compat: article NOTE admonition renders correctly");
+    // BRL-CAD about.adoc uses NOTE admonitions.
+    const std::string src =
+        "= About BRL-CAD\n"
+        "Christopher Sean Morrison\n"
+        ":doctype: article\n"
+        "\n"
+        "BRL-CAD is a solid modeling system.\n"
+        "\n"
+        "[NOTE]\n"
+        "====\n"
+        "Development began in 1979.\n"
+        "====\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "admonitionblock note");
+    EXPECT_CONTAINS(out, "Development began in 1979.");
+    end_test();
+}
+
+static void test_brlcad_table_stacked_attrs() {
+    begin_test("BRL-CAD compat: table with stacked [cols] and [%noheader] attributes");
+    // gcv.adoc uses [cols="2*"] on one line then [%noheader] on the next.
+    const std::string src =
+        "= GCV\n"
+        ":doctype: article\n"
+        "\n"
+        "[cols=\"2*\"]\n"
+        "[%noheader]\n"
+        "|===\n"
+        "|`key`\n"
+        "|Value\n"
+        "|===\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "<table");
+    EXPECT_NOT_CONTAINS(out, "<thead>");
+    EXPECT_CONTAINS(out, "<code>key</code>");
+    end_test();
+}
+
+static void test_brlcad_verbatim_literal_block() {
+    begin_test("BRL-CAD compat: .... verbatim/literal block renders as pre");
+    // BRL-CAD articles use .... delimited literal blocks for command output.
+    const std::string src =
+        "= Test\n"
+        ":doctype: article\n"
+        "\n"
+        "Run the command:\n"
+        "\n"
+        "....\n"
+        "$ make libgcv\n"
+        "....\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "<pre");
+    EXPECT_CONTAINS(out, "make libgcv");
+    end_test();
+}
+
+static void test_brlcad_manpage_dlist_option_format() {
+    begin_test("BRL-CAD compat: manpage dlist with *-opt* style terms and inline args");
+    // nirt.adoc uses patterns like: *-e* _script_::
+    const std::string src =
+        "= NIRT(1)\n"
+        ":doctype: manpage\n"
+        ":mansource: BRL-CAD\n"
+        ":manmanual: BRL-CAD User Commands\n"
+        "\n"
+        "== NAME\n"
+        "nirt - ray trace a model\n"
+        "\n"
+        "== SYNOPSIS\n"
+        "nirt model.g\n"
+        "\n"
+        "== OPTIONS\n"
+        "\n"
+        "*-e* _script_::\n"
+        "Run the script string.\n"
+        "\n"
+        "*-s*::\n"
+        "Run in silent mode.\n";
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+    EXPECT_CONTAINS(out, ".SH OPTIONS");
+    EXPECT_CONTAINS(out, "\\fB\\-e\\fP");
+    EXPECT_CONTAINS(out, "\\fI");
+    EXPECT_CONTAINS(out, "Run the script string.");
+    EXPECT_CONTAINS(out, "\\fB\\-s\\fP");
+    EXPECT_CONTAINS(out, "Run in silent mode.");
+    end_test();
+}
 
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
@@ -6445,6 +6878,12 @@ int main(int argc, char* argv[]) {
     test_html5_image();
     test_html5_inline_image();
     test_html5_inline_image_alt();
+    test_html5_inline_image_url_not_wrapped();
+    test_html5_block_image_alt_stem();
+    test_html5_nested_bold_italic();
+    test_html5_nested_italic_bold();
+    test_html5_italic_inside_backtick();
+    test_html5_brlcad_option_style();
     test_html5_table();
     test_html5_link_relative();
 
@@ -6646,13 +7085,34 @@ int main(int argc, char* argv[]) {
     test_html_arrow_replacements();
     test_html_verbatim_trailing_space_stripped();
 
-    // re2c block scanner tests
-    std::cout << "\nre2c block scanner tests:\n";
+    // BRL-CAD compatibility tests
+    std::cout << "\nBRL-CAD compatibility tests:\n";
+    test_brlcad_block_image_no_alt_uses_stem();
+    test_brlcad_block_image_no_alt_no_path();
+    test_brlcad_block_image_explicit_alt_preserved();
+    test_brlcad_manpage_example_block();
+    test_brlcad_article_note_admonition();
+    test_brlcad_table_stacked_attrs();
+    test_brlcad_verbatim_literal_block();
+    test_brlcad_manpage_dlist_option_format();
+
+    // inline_scanner.hpp tests (always active)
+    std::cout << "\ninline scanner tests:\n";
+    test_inline_scanner_unconstrained();
+    test_inline_scanner_constrained();
+    test_inline_scanner_boundaries();
+    test_inline_scanner_unconstrained_fallthrough();
+    test_inline_scanner_direct();
+    test_inline_scanner_nested_spans();
+    test_inline_scanner_code_inner_subs();
+
+    // Block scanner tests (always active)
+    std::cout << "\nblock scanner tests:\n";
     test_block_scanner_types();
     test_block_scanner_captures();
 
-    // lemon attr-list parser tests
-    std::cout << "\nlemon attr-list parser tests:\n";
+    // Attr-list parser tests (always active)
+    std::cout << "\nattr-list parser tests:\n";
     test_attr_list_positional();
     test_attr_list_named();
     test_attr_list_mixed();

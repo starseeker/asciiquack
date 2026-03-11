@@ -33,6 +33,34 @@
 
 namespace fs = std::filesystem;
 
+// ── Active backend description ────────────────────────────────────────────────
+// Compose a one-line description of which optional backends are compiled in.
+// This appears in benchmark output so results are self-documenting.
+static std::string backend_label() {
+    std::string label;
+#ifdef AQREGEX_USE_PCRE2
+#  ifdef AQREGEX_PCRE2_SYSTEM
+    label += "system PCRE2 (JIT)";
+#  else
+    label += "embedded PCRE2 (no JIT)";
+#  endif
+#else
+    label += "std::regex";
+#endif
+
+#ifdef ASCIIQUACK_SCANNER_PARSER
+#  ifdef ASCIIQUACK_HAND_BLOCK_SCANNER
+    label += " + hand-written block scanner";
+#  else
+    label += " + re2c block scanner";
+#  endif
+#endif
+#ifdef ASCIIQUACK_USE_INLINE_SCANNER
+    label += " + inline scanner";
+#endif
+    return label;
+}
+
 static std::string read_file(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) {
@@ -86,6 +114,7 @@ int main(int argc, char* argv[]) {
         double avg_ms   = total_ms / n;
 
         std::cout << "asciiquack (C++17):\n";
+        std::cout << "  backend    : " << backend_label() << "\n";
         std::cout << "  file       : " << arg1  << "\n";
         std::cout << "  iterations : " << n     << "\n";
         std::cout << "  total      : " << total_ms << " ms\n";
@@ -120,6 +149,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "asciiquack corpus benchmark:\n";
+    std::cout << "  backend    : " << backend_label() << "\n";
     std::cout << "  corpus     : " << arg1 << "\n";
     std::cout << "  files      : " << corpus.size() << " .adoc files\n";
     std::cout << "  iterations : " << n << " rounds (each round converts all files)\n";
