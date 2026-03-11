@@ -146,13 +146,14 @@ static float parse_dimension_pts(const std::string& s, float content_w = 468.0f)
         const std::size_t sz = out.size();
         for (std::size_t i = 0; i < sz; ++i) {
             if (i + 1 < sz && out[i] == '-' && out[i+1] == '-') {
-                // Only convert if both neighbours are word characters
+                // Only convert if both neighbours are strict word characters
+                // (alphanumeric or underscore), matching asciidoc's rule exactly.
                 bool prev_word = (i > 0) &&
                     (std::isalnum(static_cast<unsigned char>(out[i-1])) ||
-                     out[i-1] == '_' || out[i-1] == '"' || out[i-1] == '\'');
+                     out[i-1] == '_');
                 bool next_word = (i + 2 < sz) &&
                     (std::isalnum(static_cast<unsigned char>(out[i+2])) ||
-                     out[i+2] == '_' || out[i+2] == '"' || out[i+2] == '\'');
+                     out[i+2] == '_');
                 if (prev_word && next_word) {
                     result += '\x97';
                     ++i;  // skip the second '-'
