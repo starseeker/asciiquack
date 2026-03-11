@@ -32,33 +32,63 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build .
 ./asciiquack_tests        # run test suite
 ./bench_asciiquack [file] [iterations]
+./bench_asciiquack [directory] [iterations]   # corpus mode: all *.adoc files
 ```
-
-### Regex backend options
-
-| CMake flags | Backend | Notes |
-|---|---|---|
-| *(default)* | System `libpcre2-8` if found; embedded PCRE2 otherwise | Automatic |
-| `-DUSE_SYSTEM_PCRE2=OFF` | Embedded PCRE2 vendor subset | No external dependency |
-| `-DUSE_PCRE2=OFF` | `std::regex` | Slowest; always available |
-
-The embedded PCRE2 subset (`vendor/pcre2_embed.h`) is a single-header
-amalgamation of PCRE2 10.42 (~54 000 lines): no JIT compiler, no Unicode
-property support (`\p{}`), no DFA engine.  Include `vendor/pcre2_impl.c` in
-your build to instantiate it.  Install `libpcre2-dev` to get the full
-JIT-enabled system library.
 
 ## Performance
 
-Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
-(335 lines, ~9 KB), 10-iteration warm-up, GCC 13 `-O2`.
+The default build uses a hand-written single-pass block scanner
+(`block_scanner_hand.c`) and a hand-written inline scanner
+(`inline_scanner.hpp`) that together replace all regex use on the hot path.
+No external libraries are needed.
 
-| Backend | Avg / iter | Conv / sec | vs std::regex |
+Benchmark: 1 000 in-process iterations, 10-iteration warm-up, GCC 13 `-O2`.
+
+### Single-file (`benchmark/sample-data/mdbasics.adoc`, 334 lines, ~9 KB)
+
+| Processor | Avg / iter | Conv / sec | vs Asciidoctor |
 |---|---|---|---|
-| Ruby Asciidoctor 2.1.0 | ~2.3 ms | ~440 | reference |
-| asciiquack / `std::regex` | ~3.1 ms | ~321 | — |
-| asciiquack / embedded PCRE2 (no JIT) | ~0.77 ms | ~1 291 | **~4× faster** |
-| asciiquack / system PCRE2 (JIT) | ~0.65 ms | ~1 541 | **~4.8× faster** |
+| Ruby Asciidoctor 2.1.0 | ~2.3 ms | ~440 | 1× (reference) |
+| asciiquack (hand-written scanner) | ~0.27 ms | ~3 700 | **~8.5× faster** |
+
+### BRL-CAD corpus (`benchmark/sample-data/brlcad/`, 9 files, ~3 600 lines)
+
+The sample corpus mirrors real documentation from
+[BRL-CAD](https://github.com/starseeker/brlcad_quickiterate/tree/asciidoc_only/brlcad/doc/asciidoc)
+and exercises articles, man pages, tables, admonitions, code blocks, and
+definition lists.
+
+| Metric | Value |
+|---|---|
+| Files | 9 (4 articles + 5 man pages) |
+| Total lines | ~3 600 |
+| Average per file | ~760 µs |
+| Throughput | ~1 300 files/sec |
+
+Run the corpus benchmark yourself:
+
+```bash
+./bench_asciiquack benchmark/sample-data/brlcad 100
+```
+
+## BRL-CAD compatibility
+
+All AsciiDoc features used by the BRL-CAD documentation set are supported:
+
+| Feature | Example | Status |
+|---|---|---|
+| Articles with TOC | `:doctype: article`, `:toc:` | ✓ |
+| Man pages | `:doctype: manpage`, `:mansource:`, `:manmanual:` | ✓ |
+| Definition lists | `*-o*::` , `*term*::` | ✓ |
+| Tables with `cols=` | `[cols="2*"]` | ✓ |
+| `[%noheader]` tables | stacked attribute lists | ✓ |
+| Verbatim blocks | `....` delimited blocks | ✓ |
+| Source / listing blocks | `[source,bash]` + `----` | ✓ |
+| Admonitions | `[NOTE]`, `[CAUTION]` | ✓ |
+| Example blocks | `[example]` + `====` | ✓ |
+| Block and inline images | `image::path[]`, `image:path[]` | ✓ |
+| Cross-references | `<<anchor>>`, `[[anchor]]` | ✓ |
+| Inline markup | `*bold*`, `_italic_`, `` `mono` `` | ✓ |
 
 ### Other dependencies
 

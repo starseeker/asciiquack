@@ -218,6 +218,16 @@ struct ImageMacro {
     std::unordered_map<std::string, std::string> attrs;
 };
 
+// Return the filename stem (no directory, no extension) from a path,
+// matching asciidoctor's default alt-text derivation for block images.
+static std::string stem_from_path(const std::string& target) {
+    auto slash = target.find_last_of("/\\");
+    std::string name = (slash != std::string::npos) ? target.substr(slash + 1) : target;
+    auto dot = name.rfind('.');
+    if (dot != std::string::npos) { name = name.substr(0, dot); }
+    return name;
+}
+
 std::optional<ImageMacro> match_block_image(const std::string& line) {
     AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
     if (r.type != AQ_BT_BLOCK_IMAGE) { return std::nullopt; }
@@ -225,7 +235,7 @@ std::optional<ImageMacro> match_block_image(const std::string& line) {
     img.target = std::string(line.data() + r.caps[0].off, r.caps[0].len);
     std::string attr_str = "[" + std::string(line.data() + r.caps[1].off, r.caps[1].len) + "]";
     img.attrs  = parse_attribute_list(attr_str);
-    img.alt    = img.attrs.count("1") ? img.attrs["1"] : img.target;
+    img.alt    = img.attrs.count("1") ? img.attrs["1"] : stem_from_path(img.target);
     return img;
 }
 

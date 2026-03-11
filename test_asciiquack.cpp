@@ -6508,6 +6508,165 @@ static void test_attr_list_multi_positional_with_spaces() {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BRL-CAD compatibility tests
+// These tests verify that the AsciiDoc patterns used by BRL-CAD documentation
+// are correctly handled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void test_brlcad_block_image_no_alt_uses_stem() {
+    begin_test("BRL-CAD compat: block image with no alt text uses filename stem");
+    // BRL-CAD files use image::path/to/foo.png[] with no alt text.
+    // asciidoctor derives the default alt from the stem of the filename.
+    std::string out = html("image::path/to/gcv_architecture.png[]\n");
+    EXPECT_CONTAINS(out, "alt=\"gcv_architecture\"");
+    EXPECT_NOT_CONTAINS(out, "alt=\"path/to/gcv_architecture.png\"");
+    end_test();
+}
+
+static void test_brlcad_block_image_no_alt_no_path() {
+    begin_test("BRL-CAD compat: block image with no alt text and no path uses stem");
+    std::string out = html("image::photo.png[]\n");
+    EXPECT_CONTAINS(out, "alt=\"photo\"");
+    EXPECT_NOT_CONTAINS(out, "alt=\"photo.png\"");
+    end_test();
+}
+
+static void test_brlcad_block_image_explicit_alt_preserved() {
+    begin_test("BRL-CAD compat: block image with explicit alt text preserves it");
+    std::string out = html("image::photo.png[A beautiful photo]\n");
+    EXPECT_CONTAINS(out, "alt=\"A beautiful photo\"");
+    end_test();
+}
+
+static void test_brlcad_manpage_example_block() {
+    begin_test("BRL-CAD compat: manpage example block renders as indented example");
+    // BRL-CAD man pages use [example] blocks with a titled caption.
+    const std::string src =
+        "= 3DM-G(1)\n"
+        ":doctype: manpage\n"
+        ":mansource: BRL-CAD\n"
+        ":manmanual: User Commands\n"
+        "\n"
+        "== NAME\n"
+        "3dm-g - Rhinoceros 3D Translator\n"
+        "\n"
+        "== SYNOPSIS\n"
+        "3dm-g [-r] file.3dm\n"
+        "\n"
+        "== EXAMPLE\n"
+        "\n"
+        ".Verbose Reporting\n"
+        "[example]\n"
+        "====\n"
+        "mged>*3dm-g -r nist.g*\n"
+        "\n"
+        "This converts the file.\n"
+        "====\n";
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+    EXPECT_CONTAINS(out, ".SH EXAMPLE");
+    EXPECT_CONTAINS(out, "Verbose Reporting");
+    EXPECT_CONTAINS(out, "3dm");
+    EXPECT_CONTAINS(out, "This converts the file.");
+    end_test();
+}
+
+static void test_brlcad_article_note_admonition() {
+    begin_test("BRL-CAD compat: article NOTE admonition renders correctly");
+    // BRL-CAD about.adoc uses NOTE admonitions.
+    const std::string src =
+        "= About BRL-CAD\n"
+        "Christopher Sean Morrison\n"
+        ":doctype: article\n"
+        "\n"
+        "BRL-CAD is a solid modeling system.\n"
+        "\n"
+        "[NOTE]\n"
+        "====\n"
+        "Development began in 1979.\n"
+        "====\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "admonitionblock note");
+    EXPECT_CONTAINS(out, "Development began in 1979.");
+    end_test();
+}
+
+static void test_brlcad_table_stacked_attrs() {
+    begin_test("BRL-CAD compat: table with stacked [cols] and [%noheader] attributes");
+    // gcv.adoc uses [cols="2*"] on one line then [%noheader] on the next.
+    const std::string src =
+        "= GCV\n"
+        ":doctype: article\n"
+        "\n"
+        "[cols=\"2*\"]\n"
+        "[%noheader]\n"
+        "|===\n"
+        "|`key`\n"
+        "|Value\n"
+        "|===\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "<table");
+    EXPECT_NOT_CONTAINS(out, "<thead>");
+    EXPECT_CONTAINS(out, "<code>key</code>");
+    end_test();
+}
+
+static void test_brlcad_verbatim_literal_block() {
+    begin_test("BRL-CAD compat: .... verbatim/literal block renders as pre");
+    // BRL-CAD articles use .... delimited literal blocks for command output.
+    const std::string src =
+        "= Test\n"
+        ":doctype: article\n"
+        "\n"
+        "Run the command:\n"
+        "\n"
+        "....\n"
+        "$ make libgcv\n"
+        "....\n";
+    std::string out = html(src);
+    EXPECT_CONTAINS(out, "<pre");
+    EXPECT_CONTAINS(out, "make libgcv");
+    end_test();
+}
+
+static void test_brlcad_manpage_dlist_option_format() {
+    begin_test("BRL-CAD compat: manpage dlist with *-opt* style terms and inline args");
+    // nirt.adoc uses patterns like: *-e* _script_::
+    const std::string src =
+        "= NIRT(1)\n"
+        ":doctype: manpage\n"
+        ":mansource: BRL-CAD\n"
+        ":manmanual: BRL-CAD User Commands\n"
+        "\n"
+        "== NAME\n"
+        "nirt - ray trace a model\n"
+        "\n"
+        "== SYNOPSIS\n"
+        "nirt model.g\n"
+        "\n"
+        "== OPTIONS\n"
+        "\n"
+        "*-e* _script_::\n"
+        "Run the script string.\n"
+        "\n"
+        "*-s*::\n"
+        "Run in silent mode.\n";
+    asciiquack::ParseOptions opts;
+    opts.doctype = "manpage";
+    auto doc = asciiquack::Parser::parse_string(src, opts);
+    std::string out = asciiquack::convert_to_manpage(*doc);
+    EXPECT_CONTAINS(out, ".SH OPTIONS");
+    EXPECT_CONTAINS(out, "\\fB\\-e\\fP");
+    EXPECT_CONTAINS(out, "\\fI");
+    EXPECT_CONTAINS(out, "Run the script string.");
+    EXPECT_CONTAINS(out, "\\fB\\-s\\fP");
+    EXPECT_CONTAINS(out, "Run in silent mode.");
+    end_test();
+}
+
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
@@ -6780,6 +6939,17 @@ int main(int argc, char* argv[]) {
     test_html_em_dash_no_convert_option_names();
     test_html_arrow_replacements();
     test_html_verbatim_trailing_space_stripped();
+
+    // BRL-CAD compatibility tests
+    std::cout << "\nBRL-CAD compatibility tests:\n";
+    test_brlcad_block_image_no_alt_uses_stem();
+    test_brlcad_block_image_no_alt_no_path();
+    test_brlcad_block_image_explicit_alt_preserved();
+    test_brlcad_manpage_example_block();
+    test_brlcad_article_note_admonition();
+    test_brlcad_table_stacked_attrs();
+    test_brlcad_verbatim_literal_block();
+    test_brlcad_manpage_dlist_option_format();
 
     // inline_scanner.hpp tests (always active)
     std::cout << "\ninline scanner tests:\n";
