@@ -48,16 +48,16 @@ for `-O3` support via `check_cxx_compiler_flag` so that the flag is visible in
 the build log and is guaranteed even on compilers where the Release default is
 lower.  All benchmark numbers below are at `-O3` (GCC 13.3.0).
 
-### BRL-CAD corpus benchmark (197 files)
+### BRL-CAD corpus benchmark (532 files)
 
 All timing measured against the complete BRL-CAD documentation corpus from
 [starseeker/brlcad_quickiterate](https://github.com/starseeker/brlcad_quickiterate/tree/asciidoc_only/brlcad/doc/asciidoc)
-(197 `.adoc` files: articles, books, man pages, specs, 50 benchmark rounds, `-O3`):
+(532 `.adoc` files: articles, books, man pages, specs, 50 benchmark rounds, `-O3`):
 
 | Processor | µs / file | Files / sec | vs asciidoctor |
 |---|---|---|---|
-| Ruby Asciidoctor 2.0.26 | ~3 460 µs | ~290 | 1× (reference) |
-| asciiquack hand-written scanner | ~422 µs | ~2 370 | **~8.2×** faster |
+| Ruby Asciidoctor 2.0.26 | ~2 200 µs | ~450 | 1× (reference) |
+| asciiquack hand-written scanner | ~357 µs | ~2 800 | **~6.2×** faster |
 
 Run the corpus benchmark yourself:
 
@@ -69,8 +69,8 @@ Run the corpus benchmark yourself:
 
 | Processor | Avg / iter | Conv / sec | vs Asciidoctor |
 |---|---|---|---|
-| Ruby Asciidoctor 2.0.26 | ~3.5 ms | ~290 | 1× (reference) |
-| asciiquack (hand-written scanner) | ~0.24 ms | ~4 200 | **~14× faster** |
+| Ruby Asciidoctor 2.0.26 | ~2.3 ms | ~440 | 1× (reference) |
+| asciiquack (hand-written scanner) | ~0.24 ms | ~4 150 | **~9.5× faster** |
 
 ## BRL-CAD compatibility
 
