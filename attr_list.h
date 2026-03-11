@@ -1,5 +1,5 @@
 // @file attr_list.h
-// @brief Public C API for the lemon-based AsciiDoc attribute-list parser.
+// @brief Public C API for the AsciiDoc attribute-list parser.
 //
 // Parses the CONTENT of an AsciiDoc block-attribute or attribute-entry
 // line.  Examples:
@@ -12,13 +12,8 @@
 //   // For "[source,java]", pass the inner content "source,java":
 //   aq_parse_attr_list("source,java", 11, my_callback, userdata);
 //
-// The parser is generated from attr_list.lemon by lemon:
-//
-//   lemon -T/usr/share/lemon/lempar.c attr_list.lemon
-//
-// Pre-generated output (attr_list_gen.c) is committed to the repository so
-// that lemon is NOT required at build time.  When USE_LEMON=ON and lemon is
-// found by CMake, the file is regenerated automatically.
+// The parser is implemented in block_scanner_hand.c (hand-written,
+// no external tools required).
 
 #pragma once
 

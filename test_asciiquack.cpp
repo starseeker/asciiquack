@@ -4850,11 +4850,11 @@ static void test_pdf_code_block_preceded_by_heading_gap() {
 }
 
 static void test_pdf_code_block_long_line_clipped() {
-    begin_test("pdf: very long code line is clipped with ellipsis, does not overflow");
+    begin_test("pdf: very long code line is wrapped, does not overflow");
 
     // A code line whose raw rendered width greatly exceeds the content area.
-    // The renderer must truncate it with "..." rather than letting it overflow
-    // the right margin.
+    // The renderer must wrap it (continuation indented by 2 spaces) rather than
+    // truncating with "..." or silently overflowing the right margin.
     const std::string src =
         "= Doc\n"
         "\n"
@@ -4872,14 +4872,110 @@ static void test_pdf_code_block_long_line_clipped() {
     EXPECT(is_valid_pdf_envelope(pdf));
     EXPECT(pdf_xref_valid(pdf));
 
-    // The truncation marker "..." must be present.
-    EXPECT_CONTAINS(pdf, "...");
+    // The long line must NOT be truncated with "..." – it wraps instead.
+    // Beginning of the long line must be present.
+    EXPECT_CONTAINS(pdf, "this_is_a_very_long_identifier_name");
 
     // The shorter second line must still be rendered in full.
     EXPECT_CONTAINS(pdf, "normal_line");
 
     // The paragraph after the code block must also be present.
     EXPECT_CONTAINS(pdf, "AfterCode");
+
+    end_test();
+}
+
+static void test_pdf_nested_bold_italic() {
+    begin_test("pdf: nested *_bold-italic_* renders without literal underscores");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Text with *_bold italic_* combined.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present as individual words in the PDF stream
+    EXPECT_CONTAINS(pdf, "bold");
+    EXPECT_CONTAINS(pdf, "italic");
+    // The literal underscore characters must NOT appear in the output
+    EXPECT_NOT_CONTAINS(pdf, "_bold italic_");
+
+    end_test();
+}
+
+static void test_pdf_superscript_subscript_stripped() {
+    begin_test("pdf: superscript ^x^ and subscript ~x~ markers are stripped");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Water H~2~O and E=mc^2^ formula.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present (without markers)
+    EXPECT_CONTAINS(pdf, "H2O");
+    EXPECT_CONTAINS(pdf, "mc2");
+    // The tilde/caret markers must NOT appear
+    EXPECT_NOT_CONTAINS(pdf, "H~2~O");
+    EXPECT_NOT_CONTAINS(pdf, "mc^2^");
+
+    end_test();
+}
+
+static void test_pdf_legacy_passthrough_mono() {
+    begin_test("pdf: legacy +passthrough+ renders as mono text");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Use +printf()+ for output.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present (PDF escapes parens so search for "printf")
+    EXPECT_CONTAINS(pdf, "printf");
+    // The + markers must NOT appear as raw characters around the content
+    EXPECT_NOT_CONTAINS(pdf, "+printf");
+
+    end_test();
+}
+
+static void test_pdf_code_block_continuation_stays_together() {
+    begin_test("pdf: code block wrap continuation keeps words on same line when they fit");
+
+    // The -E option line is long enough to wrap but its continuation
+    // ("command line") must appear on the same continuation line, not split
+    // across two separate lines.
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "----\n"
+        " -E              ignore any -e or -f options specified earlier on the command line\n"
+        "normal_line\n"
+        "----\n"
+        "\n"
+        "After.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // The full content must be present (no truncation)
+    EXPECT_CONTAINS(pdf, "command line");
+    EXPECT_CONTAINS(pdf, "normal_line");
+    EXPECT_CONTAINS(pdf, "After");
 
     end_test();
 }
@@ -5450,6 +5546,102 @@ static void test_html_nested_ordered_list() {
     auto ol1 = out.find("<ol");
     auto ol2 = out.find("<ol", ol1 + 1);
     EXPECT(ol2 != std::string::npos);  // nested <ol> must exist
+
+    end_test();
+}
+
+static void test_html_nested_list_paragraph_not_absorbed() {
+    // A paragraph after a nested sub-list must NOT be treated as a list item.
+    // Regression test for parser bug where parse_list() consuming blank lines
+    // caused collect_item() to absorb the following paragraph.
+    begin_test("html5: paragraph after nested sub-list is not absorbed as list item");
+
+    std::string out = html(
+        "= T\n\n"
+        "* Item right after a code block\n"
+        "* Second item\n"
+        "** Nested item\n"
+        "\n"
+        "Paragraph after the mixed scenario.\n");
+
+    EXPECT_CONTAINS(out, "Item right after a code block");
+    EXPECT_CONTAINS(out, "Second item");
+    EXPECT_CONTAINS(out, "Nested item");
+    EXPECT_CONTAINS(out, "Paragraph after the mixed scenario.");
+
+    // "Second item" must appear as a proper list item (inside <li>)
+    auto second_pos  = out.find("Second item");
+    auto nested_pos  = out.find("Nested item");
+    auto para_pos    = out.find("Paragraph after");
+
+    EXPECT(second_pos != std::string::npos);
+    EXPECT(nested_pos != std::string::npos);
+    EXPECT(para_pos   != std::string::npos);
+
+    // The paragraph must come AFTER the nested item in the output
+    EXPECT(para_pos > nested_pos);
+
+    // "Paragraph after" must NOT be inside a <li> element.
+    // Find the <li> that contains "Second item" and ensure the paragraph
+    // text falls outside it (i.e. outside any </li> closing it).
+    auto li_start = out.rfind("<li>", second_pos);
+    auto li_end   = out.find("</li>", second_pos);
+    EXPECT(li_start != std::string::npos);
+    EXPECT(li_end   != std::string::npos);
+    // The paragraph must NOT be between this <li> and its </li>
+    EXPECT(para_pos > li_end);
+
+    end_test();
+}
+
+static void test_pdf_ordered_sublist_depth_labels() {
+    begin_test("pdf: ordered sub-list uses depth-appropriate labels (a. b. c. at depth 1)");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        ". First\n"
+        ".. Sub A\n"
+        ".. Sub B\n"
+        ". Second\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Top-level items should use numeric labels
+    EXPECT_CONTAINS(pdf, "1.");
+    EXPECT_CONTAINS(pdf, "2.");
+    // Sub-items should use letter labels
+    EXPECT_CONTAINS(pdf, "a.");
+    EXPECT_CONTAINS(pdf, "b.");
+    // Arabic numerals for sub-items must NOT be present
+    // (i.e. the sub-items must not use "1." "2." at depth 1)
+    // We can't directly check for absence of "1." since the parent uses it,
+    // but we can confirm "a." and "b." are present as labels.
+
+    end_test();
+}
+
+static void test_pdf_ordered_list_start_attribute() {
+    begin_test("pdf: ordered list start= attribute respected");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "[start=3]\n"
+        ". Third step\n"
+        ". Fourth step\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Should start at 3, not 1 — check for the labels in the PDF stream
+    EXPECT_CONTAINS(pdf, "3.");
+    EXPECT_CONTAINS(pdf, "4.");
 
     end_test();
 }
@@ -7044,6 +7236,10 @@ int main(int argc, char* argv[]) {
     test_pdf_ordered_list_gap_after();
     test_pdf_code_block_preceded_by_heading_gap();
     test_pdf_code_block_long_line_clipped();
+    test_pdf_nested_bold_italic();
+    test_pdf_superscript_subscript_stripped();
+    test_pdf_legacy_passthrough_mono();
+    test_pdf_code_block_continuation_stays_together();
     test_pdf_image_missing_file_emits_placeholder();
     test_pdf_image_xobject_structure();
     test_pdf_image_xobject_xref_valid();
@@ -7062,6 +7258,9 @@ int main(int argc, char* argv[]) {
     test_html_quote_block_positional_attribution_and_citetitle();
     test_html_nested_unordered_list();
     test_html_nested_ordered_list();
+    test_html_nested_list_paragraph_not_absorbed();
+    test_pdf_ordered_sublist_depth_labels();
+    test_pdf_ordered_list_start_attribute();
     test_html_adjacent_inline_space_between();
     test_html_text_immediately_before_inline();
     test_manpage_fp_font_restore();

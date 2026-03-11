@@ -7,32 +7,20 @@
 ///   int aq_parse_attr_list(const char *content, size_t len,
 ///                          AqAttrCallback cb, void *userdata);
 ///
-/// Drop-in replacement for:
-///   • block_scanner.c  + block_scanner_gen.h  (re2c-generated DFA)
-///   • attr_list.c      + attr_list_gen.c       (lemon-generated LALR(1) parser)
-///
-/// == Performance advantages over the re2c DFA ==
+/// == Performance characteristics ==
 ///
 ///   1. memchr() for description-list detection.
-///      The hot path for TEXT lines is scanning for "::" or ";;".  The re2c
-///      DFA advances one byte at a time through the entire line.  memchr()
-///      uses SIMD on modern glibc and processes 16–32 bytes per cycle.
+///      The hot path for TEXT lines is scanning for "::" or ";;".
+///      memchr() uses SIMD on modern glibc and processes 16–32 bytes per
+///      cycle.
 ///
-///   2. Single-pass classification + capture extraction.
-///      block_scanner.c calls aq_classify_line() (full DFA scan) and then
-///      a separate extraction function (second full scan).  This file does
-///      both in one pass.
+///   2. Single-pass classification + capture extraction done together.
 ///
 ///   3. memcmp() prefix matching for keyword macros.
 ///      "image::", "ifdef::", etc. are matched with short memcmp() calls
 ///      that the compiler emits as word-level integer comparisons.
 ///
 ///   4. Early exit for the most common types (TEXT, BLANK).
-///
-/// == Build ==
-///
-///   cmake .. -DUSE_HAND_SCANNER=ON
-///   (replaces block_scanner.c + block_scanner_gen.h with this file)
 
 #include "block_scanner.h"
 #include <string.h>
@@ -81,7 +69,7 @@ static int is_roman(char c)
 
 /* ── Thematic-break pre-check ─────────────────────────────────────────────── */
 /*
- * Identical to the one in block_scanner.c.  Detects:
+ * Detects:
  *   a) Three or more single-quote characters: '''  '''''  etc.
  *   b) ^{0,3}([-*_])( *)\1\2\1$ — exactly three of the same char, equal gaps.
  */
@@ -753,8 +741,6 @@ AqBlockScanResult aq_scan_block_line(const char *line, size_t len)
 
 /* ── Attribute-list parser ────────────────────────────────────────────────── */
 /*
- * Hand-written replacement for attr_list.c + attr_list_gen.c (lemon parser).
- *
  * Parses the CONTENT of an AsciiDoc block-attribute line (everything inside
  * the square brackets).  Examples:
  *

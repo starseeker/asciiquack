@@ -1484,8 +1484,28 @@ bool Parser::parse_next_block(Reader& reader, Block& parent) {
 
     // ── Paragraph (including admonition paragraph) ─────────────────────────────
     {
+        // If the pending style is an admonition keyword (note, tip, warning,
+        // important, caution) applied to a paragraph block, convert the block
+        // to a Simple admonition — matching asciidoctor's behaviour where
+        // [NOTE]\ntext and [NOTE]\n====\ntext\n==== both produce admonitions.
+        auto style_it = pending_attrs.find("1");
+        bool pending_is_admonition = (style_it != pending_attrs.end()) &&
+            (to_lower(style_it->second) == "note"      ||
+             to_lower(style_it->second) == "tip"       ||
+             to_lower(style_it->second) == "warning"   ||
+             to_lower(style_it->second) == "important" ||
+             to_lower(style_it->second) == "caution");
+
         auto block = parse_paragraph(reader, parent, pending_attrs);
         if (block) {
+            if (pending_is_admonition &&
+                    block->context() == BlockContext::Paragraph) {
+                std::string lbl = style_it->second;
+                block->set_context(BlockContext::Admonition);
+                block->set_content_model(ContentModel::Simple);
+                block->set_attr("name",    to_lower(lbl));
+                block->set_attr("caption", lbl);
+            }
             apply_block_attributes(*block, pending_attrs, pending_title, pending_id);
             parent.append(block);
         }
@@ -1900,7 +1920,19 @@ std::shared_ptr<List> Parser::parse_list(
                         auto sub_list = parse_list(reader, *item,
                                                    list_type, nxt, sub_attrs);
                         if (sub_list) { item->append(sub_list); }
-                        continue;
+                        // After attaching the sub-list, continue collecting only
+                        // if the next line is another list item or an explicit '+'
+                        // continuation.  A plain paragraph line after the sub-list
+                        // belongs to the parent context, not this list item.
+                        {
+                            auto after = reader.peek_line();
+                            if (!after) { break; }
+                            std::string after_str{*after};
+                            if (is_blank(after_str)) { break; }
+                            if (after_str == "+") { continue; }
+                            if (match_list_item(after_str)) { continue; }
+                            break;
+                        }
                     } else if (next_level < root_level) {
                         // Shallower item – return to parent
                         break;
