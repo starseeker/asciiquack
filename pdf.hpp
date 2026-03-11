@@ -268,6 +268,26 @@ static std::string strip_markup(const std::string& s) {
                 continue;
             }
         }
+        // pass:[text] / pass:q[text] / pass:c[text] – extract text, strip any HTML tags
+        if (s.compare(i, 5, "pass:") == 0) {
+            auto ob = s.find('[', i);
+            auto cb = (ob != std::string::npos) ? s.find(']', ob) : std::string::npos;
+            if (ob != std::string::npos && cb != std::string::npos) {
+                std::string inner = s.substr(ob + 1, cb - ob - 1);
+                // Strip any HTML/XML tags from the passthrough content
+                std::string plain;
+                plain.reserve(inner.size());
+                bool in_tag = false;
+                for (char c : inner) {
+                    if (c == '<') { in_tag = true; }
+                    else if (c == '>') { in_tag = false; }
+                    else if (!in_tag) { plain += c; }
+                }
+                out += plain;
+                i = cb + 1;
+                continue;
+            }
+        }
         // image:target[alt] – use alt text; skip attribute-only content
         if (s.compare(i, 6, "image:") == 0) {
             auto ob = s.find('[', i);
@@ -299,6 +319,34 @@ static std::string strip_markup(const std::string& s) {
             auto cb = (ob != std::string::npos) ? s.find(']', ob) : std::string::npos;
             if (ob != std::string::npos && cb != std::string::npos) {
                 i = cb + 1;
+                continue;
+            }
+        }
+        // Superscript ^text^ – keep text, drop markers
+        if (s[i] == '^') {
+            auto end = s.find('^', i + 1);
+            if (end != std::string::npos && end > i + 1) {
+                out += s.substr(i + 1, end - i - 1);
+                i = end + 1;
+                continue;
+            }
+        }
+        // Subscript ~text~ – keep text, drop markers
+        if (s[i] == '~') {
+            auto end = s.find('~', i + 1);
+            if (end != std::string::npos && end > i + 1) {
+                out += s.substr(i + 1, end - i - 1);
+                i = end + 1;
+                continue;
+            }
+        }
+        // Highlight (mark) #text# – keep text, drop markers (constrained only)
+        if (s[i] == '#' &&
+            (i == 0 || !std::isalnum(static_cast<unsigned char>(s[i-1])))) {
+            auto end = s.find('#', i + 1);
+            if (end != std::string::npos && end > i + 1) {
+                out += s.substr(i + 1, end - i - 1);
+                i = end + 1;
                 continue;
             }
         }
@@ -364,7 +412,8 @@ static std::string strip_markup(const std::string& s) {
 
 /// Parse a plain-text string (after markup has been stripped) into a vector
 /// of TextSpans, interpreting *bold*, _italic_, `mono`, **bold**, __italic__,
-/// ``mono`` inline markup.
+/// ``mono`` inline markup.  Nested markup (e.g. *_bold-italic_*) is handled
+/// by recursively parsing the inner content with the combined style.
 static std::vector<TextSpan> parse_spans(const std::string& raw,
                                          minipdf::FontStyle base_style
                                              = minipdf::FontStyle::Regular) {
@@ -401,13 +450,20 @@ static std::vector<TextSpan> parse_spans(const std::string& raw,
         }
     };
 
+    // Append a recursively-parsed inner span (handles nested markup).
+    // Mono spans are NOT recursed into (they are verbatim).
+    auto append_inner = [&](const std::string& inner, minipdf::FontStyle style) {
+        auto inner_spans = parse_spans(inner, style);
+        spans.insert(spans.end(), inner_spans.begin(), inner_spans.end());
+    };
+
     while (i < n) {
         // ── Unconstrained bold: **...**
         if (i + 1 < n && text[i] == '*' && text[i+1] == '*') {
             auto end = text.find("**", i + 2);
             if (end != std::string::npos) {
                 flush();
-                spans.push_back({text.substr(i + 2, end - i - 2), bold_of()});
+                append_inner(text.substr(i + 2, end - i - 2), bold_of());
                 i = end + 2;
                 continue;
             }
@@ -418,7 +474,7 @@ static std::vector<TextSpan> parse_spans(const std::string& raw,
             auto end = text.find('*', i + 1);
             if (end != std::string::npos && end > i + 1) {
                 flush();
-                spans.push_back({text.substr(i + 1, end - i - 1), bold_of()});
+                append_inner(text.substr(i + 1, end - i - 1), bold_of());
                 i = end + 1;
                 continue;
             }
@@ -428,7 +484,7 @@ static std::vector<TextSpan> parse_spans(const std::string& raw,
             auto end = text.find("__", i + 2);
             if (end != std::string::npos) {
                 flush();
-                spans.push_back({text.substr(i + 2, end - i - 2), italic_of()});
+                append_inner(text.substr(i + 2, end - i - 2), italic_of());
                 i = end + 2;
                 continue;
             }
@@ -439,7 +495,7 @@ static std::vector<TextSpan> parse_spans(const std::string& raw,
             auto end = text.find('_', i + 1);
             if (end != std::string::npos && end > i + 1) {
                 flush();
-                spans.push_back({text.substr(i + 1, end - i - 1), italic_of()});
+                append_inner(text.substr(i + 1, end - i - 1), italic_of());
                 i = end + 1;
                 continue;
             }
@@ -461,6 +517,20 @@ static std::vector<TextSpan> parse_spans(const std::string& raw,
             auto end = text.find('`', i + 1);
             if (end != std::string::npos && end > i + 1) {
                 flush();
+                spans.push_back({text.substr(i + 1, end - i - 1),
+                                  minipdf::FontStyle::Mono});
+                i = end + 1;
+                continue;
+            }
+        }
+        // ── Legacy constrained passthrough: +word+ (renders as plain text in PDF)
+        if (text[i] == '+' &&
+            (i == 0 || !std::isalnum(static_cast<unsigned char>(text[i-1])))) {
+            auto end = text.find('+', i + 1);
+            if (end != std::string::npos && end > i + 1 &&
+                !std::isspace(static_cast<unsigned char>(text[i+1]))) {
+                flush();
+                // Render passthrough content as mono (matches asciidoc legacy behaviour)
                 spans.push_back({text.substr(i + 1, end - i - 1),
                                   minipdf::FontStyle::Mono});
                 i = end + 1;
@@ -709,6 +779,12 @@ public:
             std::string rest = line;
             bool first_seg = true;
             while (!rest.empty()) {
+                // If the rest already fits, emit it as-is and stop.
+                if (tw(rest, minipdf::FontStyle::Mono, CODE_SIZE) <= avail_w) {
+                    out.push_back(rest);
+                    rest.clear();
+                    break;
+                }
                 // Find how many characters fit on this visual line.
                 std::string seg = rest;
                 while (!seg.empty() &&

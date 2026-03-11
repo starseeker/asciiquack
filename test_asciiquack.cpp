@@ -4885,6 +4885,101 @@ static void test_pdf_code_block_long_line_clipped() {
     end_test();
 }
 
+static void test_pdf_nested_bold_italic() {
+    begin_test("pdf: nested *_bold-italic_* renders without literal underscores");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Text with *_bold italic_* combined.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present as individual words in the PDF stream
+    EXPECT_CONTAINS(pdf, "bold");
+    EXPECT_CONTAINS(pdf, "italic");
+    // The literal underscore characters must NOT appear in the output
+    EXPECT_NOT_CONTAINS(pdf, "_bold italic_");
+
+    end_test();
+}
+
+static void test_pdf_superscript_subscript_stripped() {
+    begin_test("pdf: superscript ^x^ and subscript ~x~ markers are stripped");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Water H~2~O and E=mc^2^ formula.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present (without markers)
+    EXPECT_CONTAINS(pdf, "H2O");
+    EXPECT_CONTAINS(pdf, "mc2");
+    // The tilde/caret markers must NOT appear
+    EXPECT_NOT_CONTAINS(pdf, "H~2~O");
+    EXPECT_NOT_CONTAINS(pdf, "mc^2^");
+
+    end_test();
+}
+
+static void test_pdf_legacy_passthrough_mono() {
+    begin_test("pdf: legacy +passthrough+ renders as mono text");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "Use +printf()+ for output.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Content text must be present (PDF escapes parens so search for "printf")
+    EXPECT_CONTAINS(pdf, "printf");
+    // The + markers must NOT appear as raw characters around the content
+    EXPECT_NOT_CONTAINS(pdf, "+printf");
+
+    end_test();
+}
+
+static void test_pdf_code_block_continuation_stays_together() {
+    begin_test("pdf: code block wrap continuation keeps words on same line when they fit");
+
+    // The -E option line is long enough to wrap but its continuation
+    // ("command line") must appear on the same continuation line, not split
+    // across two separate lines.
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "----\n"
+        " -E              ignore any -e or -f options specified earlier on the command line\n"
+        "normal_line\n"
+        "----\n"
+        "\n"
+        "After.\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // The full content must be present (no truncation)
+    EXPECT_CONTAINS(pdf, "command line");
+    EXPECT_CONTAINS(pdf, "normal_line");
+    EXPECT_CONTAINS(pdf, "After");
+
+    end_test();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PDF image rendering tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7045,6 +7140,10 @@ int main(int argc, char* argv[]) {
     test_pdf_ordered_list_gap_after();
     test_pdf_code_block_preceded_by_heading_gap();
     test_pdf_code_block_long_line_clipped();
+    test_pdf_nested_bold_italic();
+    test_pdf_superscript_subscript_stripped();
+    test_pdf_legacy_passthrough_mono();
+    test_pdf_code_block_continuation_stays_together();
     test_pdf_image_missing_file_emits_placeholder();
     test_pdf_image_xobject_structure();
     test_pdf_image_xobject_xref_valid();
