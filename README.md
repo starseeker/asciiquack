@@ -19,22 +19,8 @@ duck:: ascii
 **asciiquack** is a fast, self-contained C++17 AsciiDoc processor compatible
 with [Asciidoctor](https://asciidoctor.org/).  It converts `.adoc` source files
 to HTML5, PDF, DocBook 5, and troff/groff man pages — with no Ruby runtime, no
-gem dependencies, and no internet connection required at build or run time.
-
-
-## Building
-
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
-./asciiquack_tests                          # run the test suite
-./bench_asciiquack [file] [iterations]      # single-file benchmark
-./bench_asciiquack [directory] [iterations] # corpus benchmark (all *.adoc)
-```
-
-No system libraries are required.  All dependencies are vendored.
-
+gem dependencies, and no system dependencies.  It is buildable with just a C++17
+compiler and standard libraries.
 
 ## Usage
 
@@ -100,8 +86,8 @@ echo "Hello _world_." | asciiquack -o -
 
 ## PDF output
 
-The PDF backend (`-b pdf`) is implemented in `pdf.hpp` using `minipdf.hpp`,
-a self-contained C++17 PDF writer.
+The PDF backend (`-b pdf`) is more limited than asciidoctor's but does
+offer a couple of options.
 
 ### Page size
 
@@ -138,60 +124,32 @@ PostScript name are read directly from the font's OS/2 and name tables.
 - Block and inline images (JPEG and PNG)
 
 
-## Supported AsciiDoc features
+## Motivation - How We Got Here
 
-| Feature | Notes |
-|---|---|
-| Document header (`=` title, author, revision) | |
-| Attribute entries (`:name: value`, `:!name:`, multi-line `\`) | |
-| Section titles (`==` – `======`), setext-style titles | |
-| Section IDs (`idprefix`, `idseparator`) | |
-| Section numbering (`:sectnums:`, `:sectnumlevels:`) | |
-| Table of contents (`:toc:`, `:toclevels:`, `:toc-placement:`) | |
-| Floating titles (`[discrete]`) | |
-| Special sections (`[preface]`, `[appendix]`, etc.) | |
-| Paragraphs (multi-line joined with space), literal paragraphs | |
-| Listing / source blocks (`----`) | |
-| Literal blocks (`....`) | |
-| Example blocks (`====`) | |
-| Sidebar blocks (`****`) | |
-| Quote / verse blocks (`____`) | |
-| Passthrough blocks (`++++`) | |
-| Open blocks (`--`) | |
-| Admonition paragraphs and blocks (`NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`) | |
-| Admonition captions from locale attributes | |
-| Unordered lists (`*`, `-`, up to 5 levels), compound items (`+`) | |
-| Ordered lists (`.`, `1.`, `a.`, roman numerals, `[loweralpha]`, `[start=N]`) | |
-| Description lists (`term::`), compound body blocks | |
-| Callout lists (`<N>`) and source callout markers | |
-| Basic tables (`\|===`): column spec, colspan, rowspan, alignment, style | |
-| Block title (`.Title`), block anchor (`[[id]]`), block attributes | |
-| Thematic break (`'''`), page break (`<<<`) | |
-| Block and inline images (`image::`, `image:`) | |
-| Video and audio block macros | |
-| Inline bold, italic, monospace, highlight (constrained + unconstrained) | |
-| Superscript, subscript | |
-| Attribute references (`{name}`), `attribute-missing` policy | |
-| `counter:` / `counter2:` inline macros | |
-| Typographic replacements (`--`, `...`, `(C)`, etc.) | |
-| Inline and block anchors, cross-references (`<<id>>`, `xref:id[]`) | |
-| Explicit link macro (`link:url[text]`), bare URL auto-linking | |
-| Inline image macro (`image:path[alt]`) | |
-| `kbd:[]`, `btn:[]`, `menu:[]` inline macros | |
-| Hard line-break (` +`) | |
-| Footnotes (`footnote:[text]`, `footnoteref:[]`) | |
-| Stem / math macros (`stem:[]`, `latexmath:[]`, `asciimath:[]`) and MathJax loader | |
-| Inline passthrough (`pass:[]`, `pass:q[]`, `pass:c[]`) | |
-| `include::` directive (safe-mode–aware) | |
-| Conditional preprocessing (`ifdef::`, `ifndef::`, `ifeval::`) | |
-| Stylesheet linking (`:linkcss:`, `:stylesheet:`) | |
-| `docinfo.html` / `docinfo-footer.html` injection (unsafe mode) | |
-| Embedded mode (`--embedded`) | |
-| Safe-mode levels (Unsafe / Safe / Server / Secure) | |
-| DocBook 5 backend (`-b docbook5`) | |
-| Man page backend (`-b manpage`, troff/groff) | |
-| PDF backend (`-b pdf`) | |
-| Syntax highlighting in HTML5 output (C++23 build, via µlight) | |
+Historically, the BRL-CAD documentation system used Docbook and a bundled XML
+processing toolchain to produce HTML and man page outputs from a single source.
+That system was fully self contained and needed no system infrastructure to
+produce its outputs.  That made it a *very* portable and reliable way to manage
+documentation, but the Docbook XML format didn't end up being a good fit for
+modern online web interfaces.  Even worse, it proved challenging for contributors
+to edit Docbook and that inhibited contributions.
+
+[AsciiDoc](https://docs.asciidoctor.org/asciidoc/latest/) looked like a good
+alternative, but its technology stack was orthogonal to BRL-CAD's C/C++ centric
+implementation - making AsciiDoc processing self contained wasn't possible with
+available tools.
+
+Creating a C++ version of asciidoctor was a possibility, but as a manual effort
+it would have consumed more time than could be justified.  However, experimentation
+in 2026 proved the translation problem was amenable to agentic AI methods - which
+is how we ended up with asciiquack.
+
+The feature set we're focusing on is the one needed for BRL-CAD documentation.  We
+are NOT aiming to duplicate the entirity of asciidoctor's feature set (even with AI,
+that would be a large lift for limited payoff.)  Rather, the idea is to implement
+what we need to enable AsciiDoc to function in a way similar to how Docbook has
+historically functioned in the BRL-CAD ecosystem for our core needs - while also
+making us more compatible with modern online documentation technologies.
 
 
 ## Out of scope
@@ -224,12 +182,6 @@ or generated code are required on the hot path.
 |---|---|---|---|
 | Ruby Asciidoctor 2.0.26 | ~2.3 ms | ~440 | 1× (reference) |
 | asciiquack | ~0.24 ms | ~4 150 | **~9.5×** faster |
-
-Run the corpus benchmark yourself:
-
-```bash
-./bench_asciiquack /path/to/brlcad/doc/asciidoc 50
-```
 
 
 ## BRL-CAD corpus compatibility
