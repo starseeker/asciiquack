@@ -124,7 +124,7 @@ static float parse_dimension_pts(const std::string& s, float content_w = 468.0f)
         }
     };
 
-    // Em dash: " -- " interior, "-- " at start, " --" at end.
+    // Em dash: " -- " interior, "-- " at start, " --" at end, and "word--word".
     replace_all(out, " -- ", " \x97 ");
     if (out.size() >= 3 &&
         out[0] == '-' && out[1] == '-' && out[2] == ' ') {
@@ -137,6 +137,31 @@ static float parse_dimension_pts(const std::string& s, float content_w = 468.0f)
             out.resize(sz - 3);
             out += " \x97";
         }
+    }
+    // "word--word" → "word—word" (no surrounding spaces, both sides alphanumeric).
+    // This matches asciidoc's unconstrained em-dash substitution.
+    {
+        std::string result;
+        result.reserve(out.size());
+        const std::size_t sz = out.size();
+        for (std::size_t i = 0; i < sz; ++i) {
+            if (i + 1 < sz && out[i] == '-' && out[i+1] == '-') {
+                // Only convert if both neighbours are word characters
+                bool prev_word = (i > 0) &&
+                    (std::isalnum(static_cast<unsigned char>(out[i-1])) ||
+                     out[i-1] == '_' || out[i-1] == '"' || out[i-1] == '\'');
+                bool next_word = (i + 2 < sz) &&
+                    (std::isalnum(static_cast<unsigned char>(out[i+2])) ||
+                     out[i+2] == '_' || out[i+2] == '"' || out[i+2] == '\'');
+                if (prev_word && next_word) {
+                    result += '\x97';
+                    ++i;  // skip the second '-'
+                    continue;
+                }
+            }
+            result += out[i];
+        }
+        out = std::move(result);
     }
 
     // Ellipsis (only in non-verbatim context; applied here before entity encoding)
@@ -310,6 +335,29 @@ static std::string strip_markup(const std::string& s) {
     replace_all(out, "&#8592;", "<-");     // left arrow → ASCII fallback
     replace_all(out, "&#8658;", "=>");     // double right arrow → ASCII fallback
     replace_all(out, "&#8656;", "<=");     // double left arrow → ASCII fallback
+    // Convert raw UTF-8 multibyte sequences to WinAnsiEncoding single bytes.
+    // These appear when source files already contain typographic Unicode chars.
+    replace_all(out, "\xe2\x80\x99", "\x92");  // U+2019 ' → right single quote
+    replace_all(out, "\xe2\x80\x98", "\x91");  // U+2018 ' → left single quote
+    replace_all(out, "\xe2\x80\x9c", "\x93");  // U+201C " → left double quote
+    replace_all(out, "\xe2\x80\x9d", "\x94");  // U+201D " → right double quote
+    replace_all(out, "\xe2\x80\x93", "\x96");  // U+2013 – → en dash
+    replace_all(out, "\xe2\x80\x94", "\x97");  // U+2014 — → em dash
+    replace_all(out, "\xe2\x80\xa6", "\x85");  // U+2026 … → ellipsis
+    replace_all(out, "\xe2\x80\xa2", "\x95");  // U+2022 • → bullet
+    replace_all(out, "\xe2\x84\xa2", "\x99");  // U+2122 ™ → trademark
+    replace_all(out, "\xc2\xa0", " ");          // U+00A0 → regular space
+    replace_all(out, "\xc2\xb0", "\xb0");       // U+00B0 ° → degree (same byte)
+    replace_all(out, "\xc2\xa9", "\xa9");       // U+00A9 © → copyright (same byte)
+    replace_all(out, "\xc2\xae", "\xae");       // U+00AE ® → registered (same byte)
+    replace_all(out, "\xc2\xb5", "\xb5");       // U+00B5 µ → micro (same byte)
+    replace_all(out, "\xc2\xbc", "\xbc");       // U+00BC ¼ → one quarter (same byte)
+    replace_all(out, "\xc2\xbd", "\xbd");       // U+00BD ½ → one half (same byte)
+    replace_all(out, "\xc2\xbe", "\xbe");       // U+00BE ¾ → three quarters (same byte)
+    replace_all(out, "\xc3\x97", "\xd7");       // U+00D7 × → multiplication (same byte)
+    replace_all(out, "\xc3\xb7", "\xf7");       // U+00F7 ÷ → division (same byte)
+    replace_all(out, "\xc2\xb1", "\xb1");       // U+00B1 ± → plus-minus (same byte)
+    replace_all(out, "\xc2\xb7", "\xb7");       // U+00B7 · → middle dot (same byte)
     return out;
 }
 
@@ -644,16 +692,63 @@ public:
     // ── Code block ────────────────────────────────────────────────────────────
 
     void code_block(const std::string& source) {
-        float lh = CODE_SIZE * LINE_RATIO;
-        float indent = 8.0f;
+        const float lh     = CODE_SIZE * LINE_RATIO;
+        const float indent = 8.0f;
+        const float avail_w = content_w_ - indent - CODE_RIGHT_PADDING;
 
-        // Count lines to determine background height
-        int n_lines = 0;
+        // Pre-process lines: break any line that exceeds avail_w into multiple
+        // visual lines.  Continuation lines are indented by two extra spaces.
+        // Prefer breaking at a space so tokens are not split across lines.
+        auto split_line = [&](const std::string& line,
+                               std::vector<std::string>& out) {
+            if (tw(line, minipdf::FontStyle::Mono, CODE_SIZE) <= avail_w) {
+                out.push_back(line);
+                return;
+            }
+            std::string rest = line;
+            bool first_seg = true;
+            while (!rest.empty()) {
+                // Find how many characters fit on this visual line.
+                std::string seg = rest;
+                while (!seg.empty() &&
+                       tw(seg, minipdf::FontStyle::Mono, CODE_SIZE) > avail_w) {
+                    seg.pop_back();
+                }
+                if (seg.empty()) {
+                    // Single character is wider than avail (extremely rare).
+                    seg += rest[0];
+                    rest = rest.substr(1);
+                } else {
+                    // Prefer to break at a space that is within the segment.
+                    // Look for the last space in seg (not including leading
+                    // spaces on continuation lines).
+                    std::size_t leader = first_seg ? 0u : 2u;
+                    auto sp = seg.rfind(' ', seg.size() - 1);
+                    if (sp != std::string::npos && sp > leader) {
+                        seg  = rest.substr(0, sp);
+                        rest = rest.substr(sp + 1);  // skip the break space
+                    } else {
+                        rest = rest.substr(seg.size());
+                    }
+                }
+                out.push_back(seg);
+                first_seg = false;
+                if (!rest.empty()) { rest = "  " + rest; }
+            }
+        };
+
+        std::vector<std::string> visual_lines;
         {
             std::istringstream ss(source);
             std::string line;
-            while (std::getline(ss, line)) { ++n_lines; }
+            while (std::getline(ss, line)) {
+                // Handle CR+LF in case the source has Windows line endings
+                if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+                split_line(line, visual_lines);
+            }
         }
+
+        const int n_lines = static_cast<int>(visual_lines.size());
         float block_h = static_cast<float>(n_lines) * lh + 8.0f;
 
         ensure_space(block_h);
@@ -666,26 +761,10 @@ public:
 
         cursor_y_ -= 4.0f;  // top padding
 
-        std::istringstream ss(source);
-        std::string line;
-        while (std::getline(ss, line)) {
+        for (const auto& seg : visual_lines) {
             ensure_space(lh);
-            // Clip lines that would overflow the right margin.  Truncate
-            // characters from the end and append "..." to signal clipping.
-            float avail_w = content_w_ - indent - CODE_RIGHT_PADDING;
-            float line_w  = tw(line, minipdf::FontStyle::Mono, CODE_SIZE);
-            if (line_w > avail_w) {
-                const std::string ellipsis = "...";
-                float ell_w = tw(ellipsis, minipdf::FontStyle::Mono, CODE_SIZE);
-                while (!line.empty() &&
-                       tw(line, minipdf::FontStyle::Mono, CODE_SIZE)
-                           + ell_w > avail_w) {
-                    line.pop_back();
-                }
-                line += ellipsis;
-            }
             page_->place_text(MARGIN_LEFT + indent, cursor_y_,
-                               minipdf::FontStyle::Mono, CODE_SIZE, line);
+                               minipdf::FontStyle::Mono, CODE_SIZE, seg);
             cursor_y_ -= lh;
         }
         // Gap below the code block must be large enough that the ascenders of

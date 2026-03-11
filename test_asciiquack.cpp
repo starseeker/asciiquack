@@ -4850,11 +4850,11 @@ static void test_pdf_code_block_preceded_by_heading_gap() {
 }
 
 static void test_pdf_code_block_long_line_clipped() {
-    begin_test("pdf: very long code line is clipped with ellipsis, does not overflow");
+    begin_test("pdf: very long code line is wrapped, does not overflow");
 
     // A code line whose raw rendered width greatly exceeds the content area.
-    // The renderer must truncate it with "..." rather than letting it overflow
-    // the right margin.
+    // The renderer must wrap it (continuation indented by 2 spaces) rather than
+    // truncating with "..." or silently overflowing the right margin.
     const std::string src =
         "= Doc\n"
         "\n"
@@ -4872,8 +4872,9 @@ static void test_pdf_code_block_long_line_clipped() {
     EXPECT(is_valid_pdf_envelope(pdf));
     EXPECT(pdf_xref_valid(pdf));
 
-    // The truncation marker "..." must be present.
-    EXPECT_CONTAINS(pdf, "...");
+    // The long line must NOT be truncated with "..." – it wraps instead.
+    // Beginning of the long line must be present.
+    EXPECT_CONTAINS(pdf, "this_is_a_very_long_identifier_name");
 
     // The shorter second line must still be rendered in full.
     EXPECT_CONTAINS(pdf, "normal_line");
