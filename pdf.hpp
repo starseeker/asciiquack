@@ -98,12 +98,81 @@ static float parse_dimension_pts(const std::string& s, float content_w = 468.0f)
     return 0.0f;  // unrecognised unit → auto
 }
 
+/// Apply typographic substitutions to plain text for PDF output.
+///
+/// This is the PDF-specific equivalent of sub_replacements() from
+/// substitutors.hpp.  It operates on the raw source text (not HTML-encoded)
+/// and outputs WinAnsiEncoding single-byte characters for the typographic
+/// symbols, which is the encoding used by all fonts in minipdf.hpp.
+///
+/// Applied substitutions (WinAnsiEncoding byte values):
+///   " -- " / "-- " / " --"  →  em dash (0x97, U+2014)
+///   "..."                    →  ellipsis (0x85, U+2026)
+///   "(C)"                    →  copyright © (0xA9)
+///   "(R)"                    →  registered ® (0xAE)
+///   "(TM)"                   →  trademark ™ (0x99)
+///   smart apostrophe         →  right single quote (0x92, U+2019)
+[[nodiscard]] static std::string apply_pdf_typo_subs(const std::string& text) {
+    std::string out = text;
+
+    auto replace_all = [](std::string& s,
+                          const std::string_view from, const std::string_view to) {
+        std::size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+
+    // Em dash: " -- " interior, "-- " at start, " --" at end.
+    replace_all(out, " -- ", " \x97 ");
+    if (out.size() >= 3 &&
+        out[0] == '-' && out[1] == '-' && out[2] == ' ') {
+        out = " \x97 " + out.substr(3);
+    }
+    {
+        const std::size_t sz = out.size();
+        if (sz >= 3 &&
+            out[sz-3] == ' ' && out[sz-2] == '-' && out[sz-1] == '-') {
+            out.resize(sz - 3);
+            out += " \x97";
+        }
+    }
+
+    // Ellipsis (only in non-verbatim context; applied here before entity encoding)
+    replace_all(out, "...", "\x85");
+
+    // Copyright / Registered / Trademark
+    replace_all(out, "(C)",  "\xa9");
+    replace_all(out, "(R)",  "\xae");
+    replace_all(out, "(TM)", "\x99");
+
+    // Smart apostrophe: word'word  →  word'word (WinAnsi 0x92 = U+2019)
+    {
+        std::string result;
+        result.reserve(out.size());
+        const std::size_t sz = out.size();
+        for (std::size_t i = 0; i < sz; ++i) {
+            if (out[i] == '\'' && i > 0 && i + 1 < sz) {
+                const char prev = out[i-1];
+                const char next = out[i+1];
+                const bool pw = std::isalnum(static_cast<unsigned char>(prev)) || prev == '_';
+                const bool nw = std::isalnum(static_cast<unsigned char>(next)) || next == '_';
+                if (pw && nw) { result += '\x92'; continue; }
+            }
+            result += out[i];
+        }
+        out = std::move(result);
+    }
+
+    return out;
+}
+
 /// Strip AsciiDoc markup that we cannot render (links, macros, etc.) and
 /// leave the visible text only.  This is a best-effort plain-text extractor
 /// used so that the raw AsciiDoc source is never mis-rendered as markup.
-/// Input may contain HTML-encoded characters (&lt; &gt; &amp; etc.) because
-/// sub_attributes() HTML-encodes special characters before this is called;
-/// HTML entities are decoded back to their literal characters on output.
+/// HTML entities (e.g. from attribute values) are decoded to WinAnsiEncoding
+/// single-byte characters on output.
 static std::string strip_markup(const std::string& s) {
     std::string out;
     out.reserve(s.size());
@@ -198,6 +267,9 @@ static std::string strip_markup(const std::string& s) {
 
     // Decode HTML entities produced by sub_attributes() so that the PDF
     // writer receives plain characters, not HTML escapes.
+    // Characters above 0x7F are encoded as single WinAnsiEncoding bytes, which
+    // is the encoding used by all fonts in the PDF output (both base-14 and
+    // embedded TrueType).
     auto replace_all = [](std::string& str,
                           const std::string& from, const std::string& to) {
         std::size_t pos = 0;
@@ -211,9 +283,19 @@ static std::string strip_markup(const std::string& s) {
     replace_all(out, "&gt;",   ">");
     replace_all(out, "&quot;", "\"");
     replace_all(out, "&apos;", "'");
-    replace_all(out, "&#8212;", "\xe2\x80\x94");   // em dash U+2014
-    replace_all(out, "&#8203;", "");               // zero-width space
-    replace_all(out, "&#169;",  "\xc2\xa9");       // copyright ©
+    // WinAnsiEncoding single-byte mappings for typographic characters:
+    replace_all(out, "&#8212;", "\x97");   // em dash U+2014 (WinAnsi 0x97)
+    replace_all(out, "&#8230;", "\x85");   // ellipsis U+2026 (WinAnsi 0x85)
+    replace_all(out, "&#8201;", " ");      // thin space → regular space
+    replace_all(out, "&#8203;", "");       // zero-width space → remove
+    replace_all(out, "&#169;",  "\xa9");   // copyright © (Latin-1 0xA9)
+    replace_all(out, "&#174;",  "\xae");   // registered ® (Latin-1 0xAE)
+    replace_all(out, "&#8482;", "\x99");   // trademark ™ (WinAnsi 0x99)
+    replace_all(out, "&#8217;", "\x92");   // right apostrophe ' (WinAnsi 0x92)
+    replace_all(out, "&#8594;", "->");     // right arrow → ASCII fallback
+    replace_all(out, "&#8592;", "<-");     // left arrow → ASCII fallback
+    replace_all(out, "&#8658;", "=>");     // double right arrow → ASCII fallback
+    replace_all(out, "&#8656;", "<=");     // double left arrow → ASCII fallback
     return out;
 }
 
@@ -668,7 +750,8 @@ public:
     void admonition(const std::string& label, const std::string& body_text) {
         float lh = BODY_SIZE * LINE_RATIO;
 
-        // Label (NOTE, TIP, etc.) in bold
+        // Label (NOTE, TIP, etc.) in bold — no trailing colon, matching
+        // asciidoctor's PDF output style.
         std::string lbl = label;
         for (char& c : lbl) {
             c = static_cast<char>(
@@ -676,14 +759,14 @@ public:
         }
 
         // Indent body text past the label.  Computed dynamically so that long
-        // labels like "IMPORTANT:" don't overflow into the body text area.
-        float indent = tw(lbl + ":", minipdf::FontStyle::Bold, BODY_SIZE)
+        // labels like "IMPORTANT" don't overflow into the body text area.
+        float indent = tw(lbl, minipdf::FontStyle::Bold, BODY_SIZE)
                        + BODY_SIZE;  ///< label width + one-em gap
 
         ensure_space(lh * 2.0f);
 
         page_->place_text(MARGIN_LEFT, cursor_y_,
-                          minipdf::FontStyle::Bold, BODY_SIZE, lbl + ":");
+                          minipdf::FontStyle::Bold, BODY_SIZE, lbl);
 
         // Body text indented
         paragraph(body_text, indent);
@@ -1073,7 +1156,9 @@ private:
     // ── Apply attribute substitution (document header and simple paragraphs)
     [[nodiscard]] static std::string attrs(const std::string& text,
                                            const Document& doc) {
-        return sub_attributes(text, doc.attributes());
+        // First resolve {attribute} references, then apply typographic
+        // substitutions (... → ellipsis, -- → em dash, (C) → ©, etc.).
+        return apply_pdf_typo_subs(sub_attributes(text, doc.attributes()));
     }
 
     // ── Document ──────────────────────────────────────────────────────────────
@@ -1084,15 +1169,18 @@ private:
         if (hdr.has_header && !hdr.title.empty()) {
             layout.heading(attrs(hdr.title, doc), 0);
 
-            // Author line
+            // Author line – all authors joined by ", "
             if (!hdr.authors.empty()) {
-                const auto& a = hdr.authors[0];
-                std::string auth;
-                if (!a.firstname.empty()) { auth += a.firstname; }
-                if (!a.middlename.empty()) { auth += " " + a.middlename; }
-                if (!a.lastname.empty())  { auth += " " + a.lastname;  }
-                if (!a.email.empty())     { auth += " <" + a.email + ">"; }
-                layout.meta_line(auth);
+                std::string auth_line;
+                for (std::size_t ai = 0; ai < hdr.authors.size(); ++ai) {
+                    if (ai > 0) { auth_line += ", "; }
+                    const auto& a = hdr.authors[ai];
+                    if (!a.firstname.empty())  { auth_line += a.firstname; }
+                    if (!a.middlename.empty()) { auth_line += " " + a.middlename; }
+                    if (!a.lastname.empty())   { auth_line += " " + a.lastname;  }
+                    if (!a.email.empty())      { auth_line += " <" + a.email + ">"; }
+                }
+                layout.meta_line(auth_line);
             }
 
             // Revision line
@@ -1258,12 +1346,13 @@ private:
         if (blk.content_model() == ContentModel::Simple) {
             layout.admonition(label, attrs(blk.source(), doc));
         } else {
-            // Render label then indented content
+            // Render label then indented content — no trailing colon,
+            // matching asciidoctor's PDF output style.
             std::string lbl = label;
             for (char& c : lbl) {
                 c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
             }
-            layout.block_title(lbl + ":");
+            layout.block_title(lbl);
             for (const auto& child : blk.blocks()) {
                 render_block(*child, doc, layout, 0);
             }
