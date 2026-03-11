@@ -1,5 +1,5 @@
 /// @file block_scanner.h
-/// @brief Pure-C public API for the re2c-generated AsciiDoc block-line scanner.
+/// @brief Pure-C public API for the AsciiDoc block-line scanner.
 ///
 /// The scanner classifies a single line of AsciiDoc source into a token type
 /// and optionally records the byte offsets of key sub-matches (captures).
@@ -8,10 +8,7 @@
 ///   AqBlockScanResult r = aq_scan_block_line(line.c_str(), line.size());
 ///   if (r.type == AQ_BT_ATTR_ENTRY) { ... }
 ///
-/// The function is generated from block_scanner.re via:
-///   re2c --no-generation-date -W -o block_scanner_gen.h block_scanner.re
-/// A pre-generated copy is kept in block_scanner_gen.h so that re2c is
-/// NOT required at build time.
+/// Implementation: block_scanner_hand.c (hand-written, no external tools).
 
 #pragma once
 

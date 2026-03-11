@@ -57,7 +57,6 @@ All timing measured against the complete BRL-CAD documentation corpus from
 | Processor | µs / file | Files / sec | vs asciidoctor |
 |---|---|---|---|
 | Ruby Asciidoctor 2.0.26 | ~3 460 µs | ~290 | 1× (reference) |
-| asciiquack PCRE2 (main branch) | ~1 126 µs | ~890 | **~3.1×** faster |
 | asciiquack hand-written scanner | ~422 µs | ~2 370 | **~8.2×** faster |
 
 Run the corpus benchmark yourself:
@@ -77,8 +76,7 @@ Run the corpus benchmark yourself:
 
 asciiquack was validated against the full BRL-CAD AsciiDoc corpus (199 files).
 All AsciiDoc features used by the documentation set are supported.  Output was
-compared against both the PCRE2-based main-branch asciiquack and Asciidoctor
-2.0.26.
+compared against Asciidoctor 2.0.26.
 
 ### Regression results (199 files)
 
@@ -87,7 +85,7 @@ compared against both the PCRE2-based main-branch asciiquack and Asciidoctor
 | No differences (manpages, most HTML) | 181 / 199 | ✓ identical |
 | Block image alt text (stem, not full path) | 18 / 199 | ✓ **improvement** – matches asciidoctor |
 | Inline image URL wrapped in `<a href>` | 1 / 199 | ✓ **bug fix** – old version produced broken HTML |
-| Malformed asterisks (`*******text*****`) | 3 / 199 | ⚠ benign – valid HTML, differs from PCRE2; all processors diverge on degenerate input |
+| Malformed asterisks (`*******text*****`) | 3 / 199 | ⚠ benign – valid HTML; all processors diverge on degenerate input |
 
 ### Features exercised
 
