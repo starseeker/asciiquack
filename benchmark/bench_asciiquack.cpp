@@ -49,7 +49,11 @@ static std::string backend_label() {
 #endif
 
 #ifdef ASCIIQUACK_SCANNER_PARSER
-    label += " + block scanner";
+#  ifdef ASCIIQUACK_HAND_BLOCK_SCANNER
+    label += " + hand-written block scanner";
+#  else
+    label += " + re2c block scanner";
+#  endif
 #endif
 #ifdef ASCIIQUACK_USE_INLINE_SCANNER
     label += " + inline scanner";

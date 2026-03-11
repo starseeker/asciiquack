@@ -159,10 +159,12 @@ Benchmark: 1 000 in-process iterations on `benchmark/sample-data/mdbasics.adoc`
 | Ruby Asciidoctor 2.1.0 (Ruby 3.2.3) | ~2.3 ms | ~440 | reference |
 | asciiquack / `std::regex` (GCC 13) | ~3.1 ms | ~321 | baseline |
 | asciiquack / embedded PCRE2 (no JIT) | ~0.77 ms | ~1 291 | **~4× vs std::regex** – zero external dep |
-| asciiquack / system PCRE2 (JIT) | ~0.89 ms | ~1 120 | PCRE2-only baseline |
+| asciiquack / system PCRE2 (JIT) | ~0.88 ms | ~1 137 | PCRE2-only baseline |
 | asciiquack / system PCRE2 (JIT) + inline scanner | ~0.79 ms | ~1 265 | **1.13×** vs PCRE2-only |
-| asciiquack / system PCRE2 (JIT) + block scanner | ~0.45 ms | ~2 210 | **1.97×** vs PCRE2-only |
-| asciiquack / system PCRE2 (JIT) + block + inline scanners | ~0.35 ms | ~2 820 | **2.53×** vs PCRE2-only |
+| asciiquack / system PCRE2 (JIT) + re2c block scanner | ~0.45 ms | ~2 231 | **1.96×** vs PCRE2-only |
+| asciiquack / system PCRE2 (JIT) + re2c block + inline scanners | ~0.35 ms | ~2 825 | **2.48×** vs PCRE2-only |
+| asciiquack / system PCRE2 (JIT) + hand-written block scanner | ~0.41 ms | ~2 419 | **2.13×** vs PCRE2-only |
+| asciiquack / hand-written block + inline scanners (no PCRE2) | ~0.32 ms | ~3 081 | **2.71×** vs PCRE2-only |
 
 ### What was done
 
@@ -259,12 +261,19 @@ the full BRL-CAD documentation corpus (both HTML5 and man-page output).
 **Benchmark results** (1 000 iterations, Release build, system PCRE2 10.42
 with JIT, GCC 13 `-O2`):
 
-| Backend | `mdbasics.adoc` (sparse markup) | `inline_heavy.adoc` (dense markup) | Speedup |
+| Backend | `mdbasics.adoc` (sparse) | `inline_heavy.adoc` (dense) | vs PCRE2 baseline |
 |---|---|---|---|
-| system PCRE2 (JIT) | 0.89 ms/iter | 1.30 ms/iter | baseline |
-| + block scanner | 0.45 ms/iter | 0.51 ms/iter | **1.97–2.55×** |
-| + inline scanner | 0.79 ms/iter | 1.13 ms/iter | **1.13–1.15×** |
-| + block + inline scanners | 0.35 ms/iter | 0.35 ms/iter | **2.53–3.73×** |
+| system PCRE2 (JIT) only | 0.88 ms/iter | 1.32 ms/iter | 1× |
+| + re2c block scanner | 0.45 ms/iter | 0.50 ms/iter | **1.96–2.63×** |
+| + re2c block scanner + inline scanner | 0.35 ms/iter | 0.34 ms/iter | **2.48–3.88×** |
+| + hand-written block scanner | 0.41 ms/iter | 0.45 ms/iter | **2.13–2.91×** |
+| + hand-written block + inline scanners | 0.32 ms/iter | 0.30 ms/iter | **2.71–4.43×** |
+
+The hand-written scanner (`block_scanner_hand.c`, `USE_HAND_SCANNER=ON`) is
+**8–10% faster than the re2c DFA** for block-level classification.  Combined
+with the inline scanner it is **8–12% faster than re2c+inline**.  The full
+hand-written stack (no PCRE2, no re2c, no lemon) is **2.7–4.4× faster** than
+the PCRE2-only baseline.
 
 `benchmark/sample-data/inline_heavy.adoc` (136 lines, ~6 KB) has dense
 bold, italic, monospace, super/subscript, and highlight spans throughout
@@ -276,14 +285,15 @@ inline quote markup.  When both are enabled, every PCRE2 call in the
 parse+convert pipeline is removed.  To build and run:
 
 ```bash
-# Block scanner only:
+# Block scanner only (re2c DFA):
 cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON
 
-# Inline scanner only:
-cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_INLINE_SCANNER=ON
+# Block scanner only (hand-written, no re2c needed):
+cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON -DUSE_HAND_SCANNER=ON
 
-# Both (maximum performance, zero PCRE2 in hot path):
-cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_SCANNER_PARSER=ON -DUSE_INLINE_SCANNER=ON
+# Full hand-written stack (fastest, zero PCRE2/re2c/lemon in hot path):
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DUSE_SCANNER_PARSER=ON -DUSE_HAND_SCANNER=ON -DUSE_INLINE_SCANNER=ON
 cmake --build . -j4
 ./bench_asciiquack benchmark/sample-data/mdbasics.adoc 1000
 ./bench_asciiquack benchmark/sample-data/inline_heavy.adoc 1000
@@ -351,8 +361,8 @@ end-to-end benchmarks the gain is smaller because:
 
 The inline scanner is most valuable when combined with the block-level scanner
 (`USE_SCANNER_PARSER=ON`), which removes the larger PCRE2 cost at block level.
-Together they yield a **2.53–3.73× speedup** and eliminate every PCRE2 call
-in the hot path.
+Together they yield a **2.48–3.88×** speedup (re2c variant) or **2.71–4.43×**
+(hand-written block scanner variant), eliminating every PCRE2 call in the hot path.
 
 **Build integration:**
 
@@ -365,6 +375,80 @@ This adds `ASCIIQUACK_USE_INLINE_SCANNER` to all targets.  The `sub_quotes()`
 function in `substitutors.hpp` then delegates to `scan_inline_quotes()`
 instead of running the PCRE2 regexes.  When `OFF` (default), the PCRE2 chain
 runs unchanged.
+
+### Hand-written block scanner (`block_scanner_hand.c`)
+
+`block_scanner_hand.c` is a pure C reimplementation of the `aq_scan_block_line()`
+API (defined in `block_scanner.h`) that requires **no generated code** — no
+re2c, no pre-generated `block_scanner_gen.h`.  It is a drop-in replacement for
+`block_scanner.c` and is selected with `-DUSE_HAND_SCANNER=ON`.
+
+**Why a hand-written scanner beats the re2c DFA:**
+
+The re2c DFA for text lines must scan every byte looking for `::` or `;;`
+(description-list separators).  Its inner loop is equivalent to:
+
+```c
+while (1) { c = *++p; if (c=='\0') return TEXT; if (c==':') …; if (c==';') …; }
+```
+
+The hand-written scanner uses `memchr()` instead:
+
+```c
+const char *colon = memchr(p, ':', (size_t)(pe - p));
+```
+
+`memchr()` in glibc uses SSE2/AVX2 and processes **16–32 bytes per cycle**
+vs. the DFA's 1 byte per transition.  For the common case where text lines
+contain no `::` or `;;`, `memchr()` returns `NULL` after a single SIMD pass.
+
+**Additional single-pass design:**
+
+The re2c approach is two-pass: `aq_classify_line()` (DFA scan) then a
+separate capture-extraction function (a second scan of the same bytes).
+`block_scanner_hand.c` combines both into **one pass**, building the
+`AqBlockScanResult` directly as it identifies the token type.
+
+**Design overview:**
+
+| Technique | Applied to |
+|---|---|
+| `memchr()` for `:` / `;` | Description-list scan on every TEXT line (hot path) |
+| `memcmp()` prefix match | Keyword macros: `image::`, `ifdef::`, `include::`, etc. |
+| First-char dispatch (`switch`) | Quick routing to the correct handler |
+| Combined classify+extract | One pass for all token types |
+| Same `is_thematic_break()` | Unchanged pre-check for `'''`, `---`, `* * *` |
+
+**Benchmark results** (1 000 iterations, Release build, GCC 13 `-O2`):
+
+| Backend | `mdbasics.adoc` | `inline_heavy.adoc` | vs PCRE2 baseline |
+|---|---|---|---|
+| PCRE2 (JIT) + re2c block scanner | 0.45 ms | 0.50 ms | 1.96–2.63× |
+| PCRE2 (JIT) + hand-written block scanner | 0.41 ms | 0.45 ms | **2.13–2.91×** |
+| hand-written block + inline scanners | 0.32 ms | 0.30 ms | **2.71–4.43×** |
+
+The hand-written block scanner is **8–10% faster** than the re2c DFA on
+its own.  The gain is modest because the DFA's compiled switch statements
+are already well-optimized by the C compiler; the main benefit comes from
+replacing the byte-by-byte text scan with `memchr()`.
+
+**The full hand-written stack** (`USE_SCANNER_PARSER=ON -DUSE_HAND_SCANNER=ON
+-DUSE_INLINE_SCANNER=ON`) is entirely self-contained: no PCRE2, no re2c,
+no lemon required.  It uses only the C standard library (`memchr`, `memcmp`,
+`memset`, `strlen`) plus the lemon-generated attribute-list parser
+(`attr_list_gen.c`, pre-generated and committed).
+
+**Build:**
+
+```bash
+# Hand-written block scanner only (no re2c needed):
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DUSE_SCANNER_PARSER=ON -DUSE_HAND_SCANNER=ON
+
+# Full self-contained stack (fastest; no PCRE2/re2c in hot path):
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DUSE_SCANNER_PARSER=ON -DUSE_HAND_SCANNER=ON -DUSE_INLINE_SCANNER=ON
+```
 
 ### Remaining opportunity
 

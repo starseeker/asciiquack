@@ -83,6 +83,13 @@ option(USE_SCANNER_PARSER "Use re2c/lemon scanner in the parsing pipeline" OFF)
 # Produces identical output; eliminates all PCRE2 calls for inline-markup
 # recognition.  Default is OFF so existing PCRE2 behaviour is unchanged.
 option(USE_INLINE_SCANNER "Use hand-written single-pass scanner for inline quote markup" OFF)
+# When ON, block_scanner_hand.c replaces block_scanner.c + block_scanner_gen.h.
+# The hand-written scanner provides the same AqBlockScanResult aq_scan_block_line()
+# API but uses memchr() for fast description-list detection and combines
+# classification with capture extraction into a single pass.  Requires no
+# generated code (re2c not needed).  USE_SCANNER_PARSER must also be ON for
+# the scanner to be active in the parser hot path.
+option(USE_HAND_SCANNER "Use hand-written block scanner (replaces re2c DFA)" OFF)
 
 if(USE_RE2C)
     find_program(RE2C_EXECUTABLE re2c)
@@ -137,8 +144,14 @@ endif()
 # Both block_scanner.c and attr_list.c + attr_list_gen.c are always compiled;
 # the USE_RE2C / USE_LEMON options only control whether the generator tools
 # are run to refresh the pre-generated headers/sources.
+# When USE_HAND_SCANNER=ON, block_scanner_hand.c replaces block_scanner.c.
+if(USE_HAND_SCANNER)
+    set(AQSCANNER_BLOCK_SRC "${CMAKE_SOURCE_DIR}/block_scanner_hand.c")
+else()
+    set(AQSCANNER_BLOCK_SRC "${CMAKE_SOURCE_DIR}/block_scanner.c")
+endif()
 set(AQSCANNER_SRCS
-    "${CMAKE_SOURCE_DIR}/block_scanner.c"
+    "${AQSCANNER_BLOCK_SRC}"
     "${CMAKE_SOURCE_DIR}/attr_list.c"
     "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
 )
@@ -147,6 +160,9 @@ function(aqscanner_configure target)
     target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_SCANNER)
     if(USE_SCANNER_PARSER)
         target_compile_definitions(${target} PRIVATE ASCIIQUACK_SCANNER_PARSER)
+    endif()
+    if(USE_HAND_SCANNER)
+        target_compile_definitions(${target} PRIVATE ASCIIQUACK_HAND_BLOCK_SCANNER)
     endif()
     if(USE_INLINE_SCANNER)
         target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_INLINE_SCANNER)
@@ -157,7 +173,7 @@ function(aqscanner_configure target)
         TARGET_DIRECTORY ${target}
         PROPERTIES COMPILE_FLAGS "-w"
     )
-    if(RE2C_EXECUTABLE)
+    if(NOT USE_HAND_SCANNER AND RE2C_EXECUTABLE)
         add_dependencies(${target} re2c_block_scanner)
     endif()
     if(LEMON_EXECUTABLE AND LEMON_TEMPLATE)
@@ -216,9 +232,19 @@ else()
 endif()
 
 if(USE_SCANNER_PARSER)
-    message(STATUS "  Scanner parser: ON — re2c block scanner + lemon attr-list parser active in pipeline")
+    if(USE_HAND_SCANNER)
+        message(STATUS "  Scanner parser: ON — hand-written block scanner + lemon attr-list parser active in pipeline")
+    else()
+        message(STATUS "  Scanner parser: ON — re2c block scanner + lemon attr-list parser active in pipeline")
+    endif()
 else()
     message(STATUS "  Scanner parser: OFF — PCRE2/std::regex used throughout (default; use -DUSE_SCANNER_PARSER=ON to enable)")
+endif()
+
+if(USE_HAND_SCANNER)
+    message(STATUS "  Block scanner: hand-written (block_scanner_hand.c, no re2c required)")
+else()
+    message(STATUS "  Block scanner: re2c-generated DFA (block_scanner_gen.h, use -DUSE_HAND_SCANNER=ON for hand-written)")
 endif()
 
 if(USE_INLINE_SCANNER)
