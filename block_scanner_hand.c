@@ -1,10 +1,15 @@
 /// @file block_scanner_hand.c
-/// @brief Hand-written AsciiDoc block-line scanner.
+/// @brief Hand-written AsciiDoc block-line scanner and attribute-list parser.
 ///
-/// Drop-in replacement for block_scanner.c (re2c DFA + capture extraction)
-/// that requires no generated code.  The public API is identical:
+/// Provides two public C functions, both without any generated code:
 ///
 ///   AqBlockScanResult aq_scan_block_line(const char *line, size_t len);
+///   int aq_parse_attr_list(const char *content, size_t len,
+///                          AqAttrCallback cb, void *userdata);
+///
+/// Drop-in replacement for:
+///   • block_scanner.c  + block_scanner_gen.h  (re2c-generated DFA)
+///   • attr_list.c      + attr_list_gen.c       (lemon-generated LALR(1) parser)
 ///
 /// == Performance advantages over the re2c DFA ==
 ///
@@ -744,4 +749,114 @@ AqBlockScanResult aq_scan_block_line(const char *line, size_t len)
     /* 16. Remaining: letters, digits, or other chars — dispatch to the
      *     keyword-macro, list-item, description-list, or TEXT handler.       */
     return classify_content(line, len, line, pe);
+}
+
+/* ── Attribute-list parser ────────────────────────────────────────────────── */
+/*
+ * Hand-written replacement for attr_list.c + attr_list_gen.c (lemon parser).
+ *
+ * Parses the CONTENT of an AsciiDoc block-attribute line (everything inside
+ * the square brackets).  Examples:
+ *
+ *   "source,java"             → positional 1="source",  positional 2="java"
+ *   "id=myid,title=The Title" → named "id"="myid",      named "title"="The Title"
+ *   "A photo"                 → positional 1="A photo"
+ *   "quote, Mike Muuss"       → positional 1="quote",   positional 2="Mike Muuss"
+ *   "id=\"my anchor\""        → named "id"="my anchor"  (quoted value)
+ *
+ * Algorithm:
+ *   1. Split on commas (outside of double-quoted strings).
+ *   2. For each token:
+ *      a. If it contains '=' (outside quotes) → named attribute.
+ *      b. Otherwise → positional attribute (1-based index).
+ *   3. Trim leading/trailing ASCII whitespace from keys and values.
+ *   4. Strip surrounding double-quotes from values.
+ */
+
+#include "attr_list.h"
+#include <stdio.h>   /* snprintf */
+
+int aq_parse_attr_list(const char    *content,
+                       size_t         len,
+                       AqAttrCallback cb,
+                       void          *userdata)
+{
+    if (!content || !cb) { return -1; }
+
+    const char *p  = content;
+    const char *pe = content + len;
+    int positional_idx = 1;
+
+    while (p < pe) {
+        /* Skip leading whitespace. */
+        while (p < pe && (*p == ' ' || *p == '\t')) ++p;
+        if (p >= pe) { break; }
+
+        /* Scan a comma-separated token, respecting double-quoted strings. */
+        const char *tok_start = p;
+        int in_q = 0;
+        while (p < pe) {
+            if (*p == '"')             { in_q = !in_q; ++p; continue; }
+            if (*p == ',' && !in_q)   { break; }
+            ++p;
+        }
+        const char *tok_end = p;
+        if (p < pe) { ++p; } /* consume the comma */
+
+        /* Trim trailing whitespace. */
+        while (tok_end > tok_start &&
+               (*(tok_end - 1) == ' ' || *(tok_end - 1) == '\t')) {
+            --tok_end;
+        }
+
+        /* Find '=' outside quotes → named attribute. */
+        const char *eq = NULL;
+        {
+            const char *q  = tok_start;
+            int         qi = 0;
+            while (q < tok_end) {
+                if (*q == '"')       { qi = !qi; ++q; continue; }
+                if (*q == '=' && !qi) { eq = q; break; }
+                ++q;
+            }
+        }
+
+        if (eq) {
+            /* Named: key=value */
+            const char *k_s = tok_start, *k_e = eq;
+            while (k_s < k_e && (*k_s == ' ' || *k_s == '\t')) { ++k_s; }
+            while (k_e > k_s && (*(k_e-1) == ' ' || *(k_e-1) == '\t')) { --k_e; }
+
+            const char *v_s = eq + 1, *v_e = tok_end;
+            while (v_s < v_e && (*v_s == ' ' || *v_s == '\t')) { ++v_s; }
+            /* Strip surrounding double-quotes. */
+            if (v_e - v_s >= 2 && *v_s == '"' && *(v_e - 1) == '"') {
+                ++v_s; --v_e;
+            }
+
+            if (k_e > k_s) {
+                cb(userdata,
+                   k_s, (size_t)(k_e - k_s),
+                   v_s, (size_t)(v_e - v_s));
+            }
+        } else {
+            /* Positional */
+            const char *v_s = tok_start, *v_e = tok_end;
+            while (v_s < v_e && (*v_s == ' ' || *v_s == '\t')) { ++v_s; }
+            if (v_e - v_s >= 2 && *v_s == '"' && *(v_e - 1) == '"') {
+                ++v_s; --v_e;
+            }
+
+            if (v_e > v_s) {
+                char key[16];
+                int  kn = snprintf(key, sizeof(key), "%d", positional_idx++);
+                if (kn > 0) {
+                    cb(userdata,
+                       key,  (size_t)kn,
+                       v_s,  (size_t)(v_e - v_s));
+                }
+            }
+        }
+    }
+    return 0;
 }

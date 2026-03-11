@@ -17,13 +17,11 @@
 #include "reader.hpp"
 #include "substitutors.hpp"
 
-// re2c block scanner and lemon attr-list parser (C API, guarded by build flag)
-#ifdef ASCIIQUACK_USE_SCANNER
+// Block-line scanner and attribute-list parser (C API — always available).
 extern "C" {
 #include "block_scanner.h"
 #include "attr_list.h"
 }
-#endif
 
 #include <cassert>
 #include <cstdio>
@@ -6151,11 +6149,10 @@ static void test_inline_scanner_unconstrained_fallthrough() {
     end_test();
 }
 
-#ifdef ASCIIQUACK_USE_INLINE_SCANNER
-// Direct unit tests for scan_inline_quotes() – only compiled when the
-// hand-written scanner is active.  These tests exercise internal logic
-// (e.g. the find_hash_close / find_nowhitespace_close helpers) that would
-// be invisible through the high-level HTML backend.
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline scanner direct tests
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct unit tests for scan_inline_quotes() — hand-written scanner is always active.
 static void test_inline_scanner_direct() {
     begin_test("inline scanner: scan_inline_quotes() direct unit tests");
 
@@ -6213,14 +6210,12 @@ static void test_inline_scanner_direct() {
 
     end_test();
 }
-#endif // ASCIIQUACK_USE_INLINE_SCANNER
 
 // ─────────────────────────────────────────────────────────────────────────────
-// re2c block scanner tests
+// Hand-written block scanner tests
 // ─────────────────────────────────────────────────────────────────────────────
-#ifdef ASCIIQUACK_USE_SCANNER
 
-/// Helper: classify a line with the re2c scanner and return the token type.
+/// Helper: classify a line with the block scanner and return the token type.
 static AqBlockToken scanner_type(const char *line) {
     return aq_scan_block_line(line, std::strlen(line)).type;
 }
@@ -6233,7 +6228,7 @@ static std::string scanner_cap(const char *line, int idx) {
 }
 
 static void test_block_scanner_types() {
-    begin_test("re2c block scanner: line-type classification");
+    begin_test("block scanner: line-type classification");
 
     EXPECT_EQ(AQ_BT_BLANK,         scanner_type(""));
     EXPECT_EQ(AQ_BT_BLANK,         scanner_type("   "));
@@ -6323,7 +6318,7 @@ static void test_block_scanner_types() {
 }
 
 static void test_block_scanner_captures() {
-    begin_test("re2c block scanner: capture extraction");
+    begin_test("block scanner: capture extraction");
 
     /* Attribute entry */
     EXPECT_EQ(std::string("my-attr"),  scanner_cap(":my-attr: hello", 0));
@@ -6382,24 +6377,9 @@ static void test_block_scanner_captures() {
     end_test();
 }
 
-#else /* !ASCIIQUACK_USE_SCANNER */
-
-static void test_block_scanner_types() {
-    begin_test("re2c block scanner: line-type classification");
-    /* Scanner not compiled; skip. */
-    end_test();
-}
-static void test_block_scanner_captures() {
-    begin_test("re2c block scanner: capture extraction");
-    end_test();
-}
-
-#endif /* ASCIIQUACK_USE_SCANNER */
-
 // ─────────────────────────────────────────────────────────────────────────────
-// lemon attr-list parser tests
+// Attr-list parser tests
 // ─────────────────────────────────────────────────────────────────────────────
-#ifdef ASCIIQUACK_USE_SCANNER
 
 /* Helper: parse content and collect results. */
 static std::vector<std::pair<std::string,std::string>>
@@ -6417,7 +6397,7 @@ parse_attrs(const char *content) {
 }
 
 static void test_attr_list_positional() {
-    begin_test("lemon attr-list parser: positional attributes");
+    begin_test("attr-list parser: positional attributes");
 
     auto attrs = parse_attrs("source,java");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6439,7 +6419,7 @@ static void test_attr_list_positional() {
 }
 
 static void test_attr_list_named() {
-    begin_test("lemon attr-list parser: named attributes");
+    begin_test("attr-list parser: named attributes");
 
     auto attrs = parse_attrs("id=myid,title=The Title");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6454,7 +6434,7 @@ static void test_attr_list_named() {
 }
 
 static void test_attr_list_mixed() {
-    begin_test("lemon attr-list parser: mixed positional + named");
+    begin_test("attr-list parser: mixed positional + named");
 
     auto attrs = parse_attrs("source,java,linenums,start=10");
     EXPECT_EQ(std::size_t(4), attrs.size());
@@ -6473,7 +6453,7 @@ static void test_attr_list_mixed() {
 }
 
 static void test_attr_list_quoted() {
-    begin_test("lemon attr-list parser: quoted values");
+    begin_test("attr-list parser: quoted values");
 
     auto attrs = parse_attrs("id=\"my anchor\",title=\"The Title\"");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6488,7 +6468,7 @@ static void test_attr_list_quoted() {
 }
 
 static void test_attr_list_empty() {
-    begin_test("lemon attr-list parser: empty input");
+    begin_test("attr-list parser: empty input");
 
     auto attrs = parse_attrs("");
     EXPECT_EQ(std::size_t(0), attrs.size());
@@ -6499,7 +6479,7 @@ static void test_attr_list_empty() {
 static void test_attr_list_positional_spaces() {
     // Unquoted positional values may contain spaces: [A photo] → 1="A photo"
     // This mirrors the PCRE2 path which splits only on commas.
-    begin_test("lemon attr-list parser: unquoted positional value with spaces");
+    begin_test("attr-list parser: unquoted positional value with spaces");
 
     auto attrs = parse_attrs("A photo");
     EXPECT_EQ(std::size_t(1), attrs.size());
@@ -6513,7 +6493,7 @@ static void test_attr_list_positional_spaces() {
 
 static void test_attr_list_multi_positional_with_spaces() {
     // [quote, Mike Muuss] → 1=quote, 2="Mike Muuss"
-    begin_test("lemon attr-list parser: multi-positional with spaces");
+    begin_test("attr-list parser: multi-positional with spaces");
 
     auto attrs = parse_attrs("quote, Mike Muuss");
     EXPECT_EQ(std::size_t(2), attrs.size());
@@ -6526,39 +6506,6 @@ static void test_attr_list_multi_positional_with_spaces() {
 
     end_test();
 }
-
-#else /* !ASCIIQUACK_USE_SCANNER */
-
-static void test_attr_list_positional() {
-    begin_test("lemon attr-list parser: positional attributes");
-    end_test();
-}
-static void test_attr_list_named() {
-    begin_test("lemon attr-list parser: named attributes");
-    end_test();
-}
-static void test_attr_list_mixed() {
-    begin_test("lemon attr-list parser: mixed positional + named");
-    end_test();
-}
-static void test_attr_list_quoted() {
-    begin_test("lemon attr-list parser: quoted values");
-    end_test();
-}
-static void test_attr_list_empty() {
-    begin_test("lemon attr-list parser: empty input");
-    end_test();
-}
-static void test_attr_list_positional_spaces() {
-    begin_test("lemon attr-list parser: unquoted positional value with spaces");
-    end_test();
-}
-static void test_attr_list_multi_positional_with_spaces() {
-    begin_test("lemon attr-list parser: multi-positional with spaces");
-    end_test();
-}
-
-#endif /* ASCIIQUACK_USE_SCANNER */
 
 
 int main(int argc, char* argv[]) {
@@ -6834,23 +6781,21 @@ int main(int argc, char* argv[]) {
     test_html_arrow_replacements();
     test_html_verbatim_trailing_space_stripped();
 
-    // inline_scanner.hpp tests
+    // inline_scanner.hpp tests (always active)
     std::cout << "\ninline scanner tests:\n";
     test_inline_scanner_unconstrained();
     test_inline_scanner_constrained();
     test_inline_scanner_boundaries();
     test_inline_scanner_unconstrained_fallthrough();
-#ifdef ASCIIQUACK_USE_INLINE_SCANNER
     test_inline_scanner_direct();
-#endif
 
-    // re2c block scanner tests
-    std::cout << "\nre2c block scanner tests:\n";
+    // Block scanner tests (always active)
+    std::cout << "\nblock scanner tests:\n";
     test_block_scanner_types();
     test_block_scanner_captures();
 
-    // lemon attr-list parser tests
-    std::cout << "\nlemon attr-list parser tests:\n";
+    // Attr-list parser tests (always active)
+    std::cout << "\nattr-list parser tests:\n";
     test_attr_list_positional();
     test_attr_list_named();
     test_attr_list_mixed();

@@ -33,246 +33,29 @@ elseif(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
-# ── Regex backend ─────────────────────────────────────────────────────────────
-# Three choices (controlled by CMake options):
+# ── Hand-written parser stack ─────────────────────────────────────────────────
+# block_scanner_hand.c  — single-pass block-line classifier (memchr hot path).
+# attr_list.h / block_scanner_hand.c also provides aq_parse_attr_list().
+# inline_scanner.hpp    — single-pass inline-quote scanner (included directly).
 #
-#   USE_PCRE2=ON  + USE_SYSTEM_PCRE2=ON  (default)
-#       → Use system libpcre2-8 when found   (JIT enabled, fastest ~5×)
-#       → Fall back to embedded vendor subset when not found (~3× faster)
-#
-#   USE_PCRE2=ON  + USE_SYSTEM_PCRE2=OFF
-#       → Force embedded PCRE2 subset (no JIT, no external dep)
-#
-#   USE_PCRE2=OFF
-#       → std::regex (no PCRE2 at all, slowest)
-#
-# RE2 is not provided as a backend; existing patterns use backreferences and
-# lookaheads that RE2 intentionally omits.
+# No external tools (re2c, lemon) or libraries (PCRE2, std::regex) are needed.
+# The only runtime dependency is the C standard library (memchr, memcmp, etc.).
 
-option(USE_PCRE2        "Use PCRE2 regex backend (faster than std::regex)"   ON)
-option(USE_SYSTEM_PCRE2 "Prefer system libpcre2-8 over embedded vendor copy" ON)
-
-# ── re2c / lemon ─────────────────────────────────────────────────────────────
-# Optional: regenerate pre-generated scanner/parser sources from their
-# originals when the respective tools are available.
-#
-#   USE_RE2C=ON  (default ON when re2c is found)
-#       → Run re2c to regenerate block_scanner_gen.h from block_scanner.re.
-#         A pre-generated copy is always available, so re2c is NEVER required.
-#
-#   USE_LEMON=ON  (default ON when lemon is found)
-#       → Run lemon to regenerate attr_list_gen.c from attr_list.lemon.
-#         A pre-generated copy is always available, so lemon is NEVER required.
-#
-# block_scanner.c and attr_list.c/.lemon provide re2c + lemon-based parsing
-# alternatives to the PCRE2 regex patterns:
-#   • block_scanner: DFA-based block-line classifier (re2c, no backreferences
-#     needed for block-level patterns except thematic break, which is handled
-#     via a small C helper).
-#   • attr_list: LALR(1) parser for AsciiDoc attribute lists (lemon).
-
-option(USE_RE2C  "Regenerate block_scanner_gen.h with re2c when found"  ON)
-option(USE_LEMON "Regenerate attr_list_gen.c with lemon when found"      ON)
-# When ON, the re2c block scanner and lemon attr-list parser are wired into
-# the parser's hot path, replacing PCRE2 for all block-level classification
-# (attribute entries, list items, image/media macros, thematic breaks, and
-# section-title text extraction).  Inline markup still uses PCRE2.
-option(USE_SCANNER_PARSER "Use re2c/lemon scanner in the parsing pipeline" OFF)
-# When ON, the hand-written single-pass inline scanner from inline_scanner.hpp
-# is compiled into sub_quotes() instead of the 13-regex PCRE2 chain.
-# Produces identical output; eliminates all PCRE2 calls for inline-markup
-# recognition.  Default is OFF so existing PCRE2 behaviour is unchanged.
-option(USE_INLINE_SCANNER "Use hand-written single-pass scanner for inline quote markup" OFF)
-# When ON, block_scanner_hand.c replaces block_scanner.c + block_scanner_gen.h.
-# The hand-written scanner provides the same AqBlockScanResult aq_scan_block_line()
-# API but uses memchr() for fast description-list detection and combines
-# classification with capture extraction into a single pass.  Requires no
-# generated code (re2c not needed).  USE_SCANNER_PARSER must also be ON for
-# the scanner to be active in the parser hot path.
-option(USE_HAND_SCANNER "Use hand-written block scanner (replaces re2c DFA)" OFF)
-
-if(USE_RE2C)
-    find_program(RE2C_EXECUTABLE re2c)
-    if(RE2C_EXECUTABLE)
-        add_custom_command(
-            OUTPUT  "${CMAKE_SOURCE_DIR}/block_scanner_gen.h"
-            COMMAND "${RE2C_EXECUTABLE}" --no-generation-date -W
-                    -o "${CMAKE_SOURCE_DIR}/block_scanner_gen.h"
-                    "${CMAKE_SOURCE_DIR}/block_scanner.re"
-            DEPENDS "${CMAKE_SOURCE_DIR}/block_scanner.re"
-            COMMENT "re2c: regenerating block_scanner_gen.h"
-            VERBATIM
-        )
-        add_custom_target(re2c_block_scanner
-            DEPENDS "${CMAKE_SOURCE_DIR}/block_scanner_gen.h")
-        message(STATUS "  re2c found: ${RE2C_EXECUTABLE} (will regenerate block_scanner_gen.h)")
-    else()
-        message(STATUS "  re2c not found: using pre-generated block_scanner_gen.h")
-    endif()
-else()
-    message(STATUS "  re2c: disabled (USE_RE2C=OFF), using pre-generated block_scanner_gen.h")
-endif()
-
-if(USE_LEMON)
-    find_program(LEMON_EXECUTABLE lemon)
-    find_file(LEMON_TEMPLATE lempar.c
-        HINTS /usr/share/lemon /usr/local/share/lemon
-        DOC "Lemon parser template (lempar.c)")
-    if(LEMON_EXECUTABLE AND LEMON_TEMPLATE)
-        add_custom_command(
-            OUTPUT  "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
-            COMMAND "${LEMON_EXECUTABLE}"
-                    "-T${LEMON_TEMPLATE}"
-                    "-d${CMAKE_SOURCE_DIR}"
-                    "${CMAKE_SOURCE_DIR}/attr_list.lemon"
-            DEPENDS "${CMAKE_SOURCE_DIR}/attr_list.lemon"
-                    "${CMAKE_SOURCE_DIR}/attr_list_impl.h"
-            COMMENT "lemon: regenerating attr_list_gen.c"
-            VERBATIM
-        )
-        add_custom_target(lemon_attr_list
-            DEPENDS "${CMAKE_SOURCE_DIR}/attr_list_gen.c")
-        message(STATUS "  lemon found: ${LEMON_EXECUTABLE} (will regenerate attr_list_gen.c)")
-    else()
-        message(STATUS "  lemon not found or lempar.c missing: using pre-generated attr_list_gen.c")
-    endif()
-else()
-    message(STATUS "  lemon: disabled (USE_LEMON=OFF), using pre-generated attr_list_gen.c")
-endif()
-
-# Helper: apply re2c/lemon scanner sources to a target.
-# Both block_scanner.c and attr_list.c + attr_list_gen.c are always compiled;
-# the USE_RE2C / USE_LEMON options only control whether the generator tools
-# are run to refresh the pre-generated headers/sources.
-# When USE_HAND_SCANNER=ON, block_scanner_hand.c replaces block_scanner.c.
-if(USE_HAND_SCANNER)
-    set(AQSCANNER_BLOCK_SRC "${CMAKE_SOURCE_DIR}/block_scanner_hand.c")
-else()
-    set(AQSCANNER_BLOCK_SRC "${CMAKE_SOURCE_DIR}/block_scanner.c")
-endif()
 set(AQSCANNER_SRCS
-    "${AQSCANNER_BLOCK_SRC}"
-    "${CMAKE_SOURCE_DIR}/attr_list.c"
-    "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
+    "${CMAKE_SOURCE_DIR}/block_scanner_hand.c"
 )
 function(aqscanner_configure target)
     target_sources(${target} PRIVATE ${AQSCANNER_SRCS})
-    target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_SCANNER)
-    if(USE_SCANNER_PARSER)
-        target_compile_definitions(${target} PRIVATE ASCIIQUACK_SCANNER_PARSER)
-    endif()
-    if(USE_HAND_SCANNER)
-        target_compile_definitions(${target} PRIVATE ASCIIQUACK_HAND_BLOCK_SCANNER)
-    endif()
-    if(USE_INLINE_SCANNER)
-        target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_INLINE_SCANNER)
-    endif()
-    # Suppress warnings from lemon-generated C code.
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/attr_list_gen.c"
-        TARGET_DIRECTORY ${target}
-        PROPERTIES COMPILE_FLAGS "-w"
+    target_compile_definitions(${target} PRIVATE
+        ASCIIQUACK_USE_SCANNER
+        ASCIIQUACK_SCANNER_PARSER
+        ASCIIQUACK_USE_INLINE_SCANNER
+        ASCIIQUACK_HAND_BLOCK_SCANNER
     )
-    if(NOT USE_HAND_SCANNER AND RE2C_EXECUTABLE)
-        add_dependencies(${target} re2c_block_scanner)
-    endif()
-    if(LEMON_EXECUTABLE AND LEMON_TEMPLATE)
-        add_dependencies(${target} lemon_attr_list)
-    endif()
 endfunction()
 
-
-set(AQREGEX_DEFS "")
-set(AQREGEX_LIBS "")
-set(AQREGEX_INCS "")
-set(AQREGEX_SRCS "")
-
-if(USE_PCRE2)
-    set(_pcre2_system_found FALSE)
-
-    if(USE_SYSTEM_PCRE2)
-        find_package(PkgConfig QUIET)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(PCRE2 QUIET libpcre2-8)
-        endif()
-        if(NOT PCRE2_FOUND)
-            find_library(PCRE2_LIBRARIES NAMES pcre2-8)
-            find_path(PCRE2_INCLUDE_DIRS NAMES pcre2.h)
-            if(PCRE2_LIBRARIES AND PCRE2_INCLUDE_DIRS)
-                set(PCRE2_FOUND TRUE)
-            endif()
-        endif()
-        if(PCRE2_FOUND)
-            set(_pcre2_system_found TRUE)
-        endif()
-    endif()
-
-    if(_pcre2_system_found)
-        # ── System PCRE2: JIT-enabled, fastest ───────────────────────────────
-        list(APPEND AQREGEX_DEFS AQREGEX_USE_PCRE2 AQREGEX_PCRE2_SYSTEM)
-        list(APPEND AQREGEX_LIBS ${PCRE2_LIBRARIES})
-        list(APPEND AQREGEX_INCS ${PCRE2_INCLUDE_DIRS})
-        message(STATUS "  Regex backend: system PCRE2 ${PCRE2_VERSION} (JIT enabled, ~5× vs std::regex)")
-    else()
-        # ── Embedded PCRE2 amalgamation: no JIT, no external dependency ───────
-        # A single translation unit instantiates all of the PCRE2 implementation.
-        # The header vendor/pcre2_embed.h provides the public API to every TU;
-        # vendor/pcre2_impl.c defines PCRE2_EMBED_IMPLEMENTATION and includes it.
-        list(APPEND AQREGEX_DEFS AQREGEX_USE_PCRE2)
-        list(APPEND AQREGEX_SRCS "${CMAKE_SOURCE_DIR}/vendor/pcre2_impl.c")
-        list(APPEND AQREGEX_INCS "${CMAKE_SOURCE_DIR}/vendor")
-        if(USE_SYSTEM_PCRE2)
-            message(STATUS "  Regex backend: embedded PCRE2 10.42 (system library not found; no JIT, ~3× vs std::regex)")
-        else()
-            message(STATUS "  Regex backend: embedded PCRE2 10.42 (USE_SYSTEM_PCRE2=OFF; no JIT, ~3× vs std::regex)")
-        endif()
-    endif()
-else()
-    message(STATUS "  Regex backend: std::regex (USE_PCRE2=OFF)")
-endif()
-
-if(USE_SCANNER_PARSER)
-    if(USE_HAND_SCANNER)
-        message(STATUS "  Scanner parser: ON — hand-written block scanner + lemon attr-list parser active in pipeline")
-    else()
-        message(STATUS "  Scanner parser: ON — re2c block scanner + lemon attr-list parser active in pipeline")
-    endif()
-else()
-    message(STATUS "  Scanner parser: OFF — PCRE2/std::regex used throughout (default; use -DUSE_SCANNER_PARSER=ON to enable)")
-endif()
-
-if(USE_HAND_SCANNER)
-    message(STATUS "  Block scanner: hand-written (block_scanner_hand.c, no re2c required)")
-else()
-    message(STATUS "  Block scanner: re2c-generated DFA (block_scanner_gen.h, use -DUSE_HAND_SCANNER=ON for hand-written)")
-endif()
-
-if(USE_INLINE_SCANNER)
-    message(STATUS "  Inline scanner: ON — hand-written single-pass scanner replaces PCRE2 for inline quote markup")
-else()
-    message(STATUS "  Inline scanner: OFF — PCRE2/std::regex used for inline markup (default; use -DUSE_INLINE_SCANNER=ON to enable)")
-endif()
-
-# ── Helper: apply regex settings to a target ─────────────────────────────────
-function(aqregex_configure target)
-    if(AQREGEX_DEFS)
-        target_compile_definitions(${target} PRIVATE ${AQREGEX_DEFS})
-    endif()
-    if(AQREGEX_LIBS)
-        target_link_libraries(${target} PRIVATE ${AQREGEX_LIBS})
-    endif()
-    if(AQREGEX_INCS)
-        target_include_directories(${target} PRIVATE ${AQREGEX_INCS})
-    endif()
-    if(AQREGEX_SRCS)
-        target_sources(${target} PRIVATE ${AQREGEX_SRCS})
-        # Suppress warnings from vendored C code; the amalgamation header
-        # handles PCRE2_CODE_UNIT_WIDTH and PCRE2_STATIC internally.
-        set_source_files_properties(${AQREGEX_SRCS}
-            TARGET_DIRECTORY ${target}
-            PROPERTIES COMPILE_FLAGS "-w")
-    endif()
-endfunction()
+message(STATUS "  Parser stack: hand-written (block_scanner_hand.c + inline_scanner.hpp)")
+message(STATUS "                no PCRE2, re2c, or lemon required")
 
 # ── Syntax highlighting via µlight ────────────────────────────────────────────
 # µlight (vendor/ulight/) requires C++23 to build; the project itself stays at
@@ -389,7 +172,6 @@ target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
 target_compile_definitions(asciiquack PRIVATE
     ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
 )
-aqregex_configure(asciiquack)
 aqscanner_configure(asciiquack)
 ulight_configure(asciiquack)
 
@@ -411,7 +193,6 @@ if(BUILD_TESTS)
         ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
         CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
-    aqregex_configure(asciiquack_tests)
     aqscanner_configure(asciiquack_tests)
     ulight_configure(asciiquack_tests)
 
@@ -430,7 +211,6 @@ if(BUILD_BENCHMARK)
     )
     target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
 	 target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
-    aqregex_configure(bench_asciiquack)
     aqscanner_configure(bench_asciiquack)
     ulight_configure(bench_asciiquack)
 endif()
