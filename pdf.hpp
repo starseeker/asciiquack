@@ -242,13 +242,27 @@ static std::string strip_markup(const std::string& s) {
                 continue;
             }
         }
-        // image:target[alt] – use alt text
+        // image:target[alt] – use alt text; skip attribute-only content
         if (s.compare(i, 6, "image:") == 0) {
             auto ob = s.find('[', i);
             auto cb = (ob != std::string::npos) ? s.find(']', ob) : std::string::npos;
             if (ob != std::string::npos && cb != std::string::npos) {
-                std::string alt = s.substr(ob + 1, cb - ob - 1);
-                if (!alt.empty()) { out += "[" + alt + "]"; }
+                std::string raw_alt = s.substr(ob + 1, cb - ob - 1);
+                // Extract first positional param (before first comma, if any)
+                auto comma = raw_alt.find(',');
+                std::string alt = (comma != std::string::npos)
+                                  ? raw_alt.substr(0, comma)
+                                  : raw_alt;
+                // Trim leading/trailing whitespace
+                auto lf = alt.find_first_not_of(" \t");
+                if (lf != std::string::npos) { alt = alt.substr(lf); }
+                auto rt = alt.find_last_not_of(" \t");
+                if (rt != std::string::npos) { alt = alt.substr(0, rt + 1); }
+                // Suppress if it looks like a pure attribute (e.g. "width=64")
+                // A real alt text does not look like "name=value"
+                bool is_attr = (!alt.empty() && alt.find('=') != std::string::npos
+                                && alt.find(' ') == std::string::npos);
+                if (!alt.empty() && !is_attr) { out += "[" + alt + "]"; }
                 i = cb + 1;
                 continue;
             }
@@ -491,6 +505,17 @@ public:
             bool               space_before = false;  ///< was preceded by space
         };
 
+        // Helper: return true if this word should attach to the preceding word
+        // without a space (i.e. it starts with closing punctuation).
+        // This handles "_italic_." → "italic." rather than "italic ."
+        auto no_space_before = [](const Word& w) -> bool {
+            if (w.text.empty() || w.space_before) { return false; }
+            const char c = w.text[0];
+            return c == '.' || c == ',' || c == ';' || c == ':' ||
+                   c == '!' || c == '?' || c == ')' || c == ']' ||
+                   c == '\x92';  // WinAnsi right apostrophe (')
+        };
+
         std::vector<Word> words;
         for (const auto& sp : spans) {
             std::istringstream ss(sp.text);
@@ -525,13 +550,16 @@ public:
 
         for (const auto& w : words) {
             float ww = tw(w.text, w.style, w.size);
+            // Punctuation-only tokens attach directly to the preceding word.
+            bool attach = !lines.back().words.empty() && no_space_before(w);
+            float gap  = (lines.back().words.empty() || attach) ? 0.0f : space_w;
             float need = lines.back().words.empty() ? ww
-                         : lines.back().total_w + space_w + ww;
+                         : lines.back().total_w + gap + ww;
 
-            if (need > avail && !lines.back().words.empty()) {
+            if (need > avail && !lines.back().words.empty() && !attach) {
                 lines.push_back({});
             }
-            float add_w = lines.back().words.empty() ? ww : space_w + ww;
+            float add_w = lines.back().words.empty() ? ww : gap + ww;
             lines.back().total_w += add_w;
             lines.back().words.push_back(w);
         }
@@ -542,7 +570,7 @@ public:
             float x = MARGIN_LEFT + x_indent;
             bool  first_word = true;
             for (const auto& w : line.words) {
-                if (!first_word) {
+                if (!first_word && !no_space_before(w)) {
                     x += space_w;
                 }
                 page_->place_text(x, cursor_y_, w.style, w.size, w.text);
@@ -691,14 +719,28 @@ public:
     /// display width in points; otherwise the image fills the content width.
     /// @p hint_h is an optional height override (0 = maintain aspect ratio).
     ///
+    /// If @p caption is non-empty it is rendered as a figure caption below the
+    /// image, prefixed with an auto-incrementing "Figure N." label.
+    ///
     /// When the image cannot be loaded (missing file, unsupported format) a
     /// plain-text placeholder is emitted instead.
     void image_block(const std::string& path,
-                     float hint_w = 0.0f, float hint_h = 0.0f) {
+                     float hint_w = 0.0f, float hint_h = 0.0f,
+                     const std::string& caption = "") {
         auto img = minipdf::PdfImage::from_file(path);
         if (!img) {
-            // Fall back to a text placeholder
-            paragraph("[image: " + path + "]");
+            // Fall back to a text placeholder showing the path stem and caption.
+            std::string stem = path;
+            {
+                auto sl = path.rfind('/');
+                if (sl != std::string::npos) { stem = path.substr(sl + 1); }
+            }
+            paragraph("[image: " + stem + "]");
+            if (!caption.empty()) {
+                ++figure_counter_;
+                figure_caption("Figure " + std::to_string(figure_counter_)
+                               + ". " + caption);
+            }
             return;
         }
 
@@ -726,6 +768,13 @@ public:
         float img_y = cursor_y_ - disp_h;
         page_->place_image(MARGIN_LEFT, img_y, disp_w, disp_h, res);
         cursor_y_ = img_y - BODY_SIZE * 0.5f;  // small gap below image
+
+        // Figure caption rendered below the image
+        if (!caption.empty()) {
+            ++figure_counter_;
+            figure_caption("Figure " + std::to_string(figure_counter_)
+                           + ". " + caption);
+        }
     }
 
     // ── Page break ────────────────────────────────────────────────────────────
@@ -839,6 +888,19 @@ public:
         cursor_y_ -= lh;
     }
 
+    /// Render a figure caption below an image.  Uses smaller italic text
+    /// and leaves a half-body-size gap above it to separate from the image.
+    void figure_caption(const std::string& caption) {
+        const float cap_sz = BODY_SIZE * 0.9f;
+        const float lh     = cap_sz * LINE_RATIO;
+        ensure_space(lh);
+        auto spans = parse_spans(caption, minipdf::FontStyle::Oblique);
+        for (auto& sp : spans) { sp.size = cap_sz; }
+        spans = merge_spans(std::move(spans));
+        wrap_spans(spans, lh, 0.0f);
+        cursor_y_ -= BODY_SIZE * 0.3f;  // small gap below caption
+    }
+
     // ── Quote / verse / sidebar (indented block) ──────────────────────────────
 
     void quoted_block(const std::string& text, const std::string& attribution) {
@@ -883,9 +945,14 @@ public:
     // ── Table ─────────────────────────────────────────────────────────────────
 
     /// One pre-processed table row passed to table_block().
+    struct TableCellData {
+        std::string text;     ///< pre-substituted cell text
+        int         colspan;  ///< number of columns this cell spans (≥ 1)
+    };
+
     struct TableRowData {
-        std::vector<std::string> cells;  ///< pre-substituted cell text
-        bool                     header; ///< true → bold text + shaded background
+        std::vector<TableCellData> cells;  ///< pre-substituted cell data
+        bool                       header; ///< true → bold text + shaded background
     };
 
     /// Render a grid table.
@@ -915,7 +982,10 @@ public:
         const float       bdr      = 0.5f;          ///< border line width (pts)
         const float       bdr_grey = 0.5f;           ///< border grey level
 
-        if (!title.empty()) { block_title(title); }
+        if (!title.empty()) {
+            ++table_counter_;
+            block_title("Table " + std::to_string(table_counter_) + ". " + title);
+        }
 
         // ── helpers ──────────────────────────────────────────────────────────
 
@@ -926,15 +996,24 @@ public:
             float space_w  = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
             int   lines    = 1;
             float line_w   = 0.0f;
+            auto no_sp = [](const std::string& t) -> bool {
+                if (t.empty()) { return false; }
+                const char c = t[0];
+                return c=='.'||c==','||c==';'||c==':'||c=='!'||c=='?'||c==')'||c==']';
+            };
             for (const auto& sp : spans) {
                 std::istringstream ss(sp.text);
                 std::string        tok;
                 while (std::getline(ss, tok, ' ')) {
                     if (tok.empty()) { continue; }
-                    float ww   = tw(tok, sp.style, sp.size);
-                    float need = (line_w == 0.0f) ? ww : line_w + space_w + ww;
-                    if (need > avail_w && line_w > 0.0f) { ++lines; line_w = ww; }
-                    else                                  { line_w = need; }
+                    float ww  = tw(tok, sp.style, sp.size);
+                    float gap = (line_w == 0.0f || no_sp(tok)) ? 0.0f : space_w;
+                    float need = line_w + gap + ww;
+                    if (need > avail_w && line_w > 0.0f && !no_sp(tok)) {
+                        ++lines; line_w = ww;
+                    } else {
+                        line_w = (line_w == 0.0f) ? ww : need;
+                    }
                 }
             }
             return lines;
@@ -952,13 +1031,18 @@ public:
             // Compute row height: tallest cell drives the row.
             // row_h = pad_top (above first baseline) + nl × lh + pad_bot (below last baseline)
             float row_h = pad_top + lh + pad_bot;
-            for (std::size_t ci = 0; ci < ncols; ++ci) {
-                const std::string& txt = (ci < row.cells.size())
-                                          ? row.cells[ci] : "";
-                if (txt.empty()) { continue; }
-                auto spans = merge_spans(parse_spans(txt, base));
+            float x_scan = 0.0f;  // logical column offset for iterating cells
+            for (const auto& cd : row.cells) {
+                if (cd.text.empty()) { x_scan += 1; continue; }
+                // Sum width over spanned columns
+                int cs = std::max(1, cd.colspan);
+                float cw = 0.0f;
+                for (int s = 0; s < cs && static_cast<std::size_t>(x_scan + s) < ncols; ++s)
+                    cw += col_w[static_cast<std::size_t>(x_scan + s)];
+                x_scan += cs;
+                auto spans = merge_spans(parse_spans(cd.text, base));
                 for (auto& sp : spans) { sp.size = BODY_SIZE; }
-                float avail_w = col_w[ci] - 2.0f * pad_x;
+                float avail_w = cw - 2.0f * pad_x;
                 int   nl      = count_lines(spans, avail_w);
                 float cell_h  = pad_top + static_cast<float>(nl) * lh + pad_bot;
                 row_h = std::max(row_h, cell_h);
@@ -977,35 +1061,96 @@ public:
 
             // Render cell text – cursor is temporarily manipulated per cell and
             // restored afterwards so all cells in the same row share row_top.
+            // Track which physical columns have been covered to draw dividers.
+            std::vector<bool> col_covered(ncols, false);
             float x_cell = table_x;
-            for (std::size_t ci = 0; ci < ncols; ++ci) {
-                const std::string& txt = (ci < row.cells.size())
-                                          ? row.cells[ci] : "";
-                if (!txt.empty()) {
-                    auto spans = merge_spans(parse_spans(txt, base));
+            std::size_t col_idx = 0;
+            for (const auto& cd : row.cells) {
+                if (col_idx >= ncols) { break; }
+                int cs = std::max(1, cd.colspan);
+                // Sum width of spanned columns
+                float cw = 0.0f;
+                for (int s = 0; s < cs && col_idx + static_cast<std::size_t>(s) < ncols; ++s) {
+                    cw += col_w[col_idx + static_cast<std::size_t>(s)];
+                    col_covered[col_idx + static_cast<std::size_t>(s)] = true;
+                }
+                if (!cd.text.empty()) {
+                    auto spans = merge_spans(parse_spans(cd.text, base));
                     for (auto& sp : spans) { sp.size = BODY_SIZE; }
                     float saved  = cursor_y_;
                     cursor_y_    = row_top - pad_top;
                     wrap_spans_in_cell(spans, lh,
                                        x_cell + pad_x,
-                                       col_w[ci] - 2.0f * pad_x);
+                                       cw - 2.0f * pad_x);
                     cursor_y_ = saved;
                 }
-                x_cell += col_w[ci];
+                x_cell += cw;
+                col_idx += static_cast<std::size_t>(cs);
             }
 
             // Top border for this row.
             page_->draw_hline(table_x, row_top, table_x + table_w,
                               bdr, bdr_grey, bdr_grey, bdr_grey);
 
-            // Vertical column separators (drawn as thin filled rectangles).
+            // Vertical column separators: skip internal borders inside spans.
             {
                 float vx = table_x;
-                for (std::size_t ci = 0; ci <= ncols; ++ci) {
-                    page_->fill_rect(vx - bdr * 0.5f, row_bottom,
-                                     bdr, row_h + bdr,
-                                     bdr_grey, bdr_grey, bdr_grey);
-                    if (ci < ncols) { vx += col_w[ci]; }
+                // Left outer border
+                page_->fill_rect(vx - bdr * 0.5f, row_bottom,
+                                 bdr, row_h + bdr,
+                                 bdr_grey, bdr_grey, bdr_grey);
+                // Compute which column-right-edges should have a divider.
+                // Build a map of cumulative width to whether a cell boundary exists.
+                float cx = table_x;
+                for (std::size_t ci = 0; ci < ncols; ++ci) {
+                    cx += col_w[ci];
+                    // Draw divider: always on the right edge of the table,
+                    // and on column boundaries that are not inside a span.
+                    // col_covered marks which logical cols were inside spans.
+                    // A boundary is spanned when col_covered[ci] is true
+                    // AND col_covered[ci+1] is true AND they belong to the same cell.
+                    // Simpler: draw divider unless ci < ncols-1 and ci+1 is also covered
+                    // by a cell that started before col ci.
+                    // For simplicity: we always draw the right border of the last col,
+                    // and for inner borders we draw when NOT covered by a spanning cell
+                    // (a spanning cell covers ncols > 1 columns, so the inner borders
+                    //  between them should be skipped – mark those positions).
+                    bool is_last = (ci + 1 == ncols);
+                    // Determine if this column boundary is inside a colspan.
+                    // We track by checking whether both this column and the next
+                    // were covered, but we can't easily tell if they're the same cell.
+                    // Use a simpler heuristic: if this cell is a spanning cell,
+                    // suppress inner dividers within its span.
+                    // We already computed col_covered; rebuild span boundaries.
+                    bool draw = is_last;
+                    if (!draw) {
+                        // Draw if col_covered[ci] == false OR col_covered[ci+1] == false
+                        // i.e., this is not inside a span.  col_covered[ci] = true means
+                        // this column was explicitly claimed by some cell.
+                        // A simple approach: don't draw when both ci and ci+1 are part of
+                        // the same spanning cell – detect by checking if any cell's span
+                        // straddles the boundary between ci and ci+1.
+                        draw = true;  // default draw
+                    }
+                    // Rebuild from row.cells: mark inner-span boundaries.
+                    // (Redo the column scan for clarity)
+                    if (!is_last) {
+                        std::size_t scan = 0;
+                        for (const auto& cd2 : row.cells) {
+                            int cs2 = std::max(1, cd2.colspan);
+                            std::size_t end2 = scan + static_cast<std::size_t>(cs2);
+                            // If ci is inside [scan, end2) and ci+1 is also inside,
+                            // this boundary is within a span.
+                            if (scan <= ci && ci + 1 < end2) { draw = false; break; }
+                            scan = end2;
+                            if (scan > ci + 1) { break; }
+                        }
+                    }
+                    if (draw) {
+                        page_->fill_rect(cx - bdr * 0.5f, row_bottom,
+                                         bdr, row_h + bdr,
+                                         bdr_grey, bdr_grey, bdr_grey);
+                    }
                 }
             }
 
@@ -1040,6 +1185,15 @@ private:
 
         float space_w = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
 
+        // Helper: return true if this word starts with closing punctuation that
+        // should attach directly to the preceding word without a space.
+        auto no_space_before = [](const std::string& t) -> bool {
+            if (t.empty()) { return false; }
+            const char c = t[0];
+            return c == '.' || c == ',' || c == ';' || c == ':' ||
+                   c == '!' || c == '?' || c == ')' || c == ']';
+        };
+
         std::vector<Word> words;
         for (const auto& sp : spans) {
             std::istringstream ss(sp.text);
@@ -1061,14 +1215,16 @@ private:
         lines.push_back({});
 
         for (const auto& w : words) {
-            float ww   = tw(w.text, w.style, w.size);
-            float need = lines.back().words.empty()
-                             ? ww
-                             : lines.back().total_w + space_w + ww;
-            if (need > avail_w && !lines.back().words.empty()) {
+            float ww     = tw(w.text, w.style, w.size);
+            bool  attach = !lines.back().words.empty() && no_space_before(w.text);
+            float gap    = (lines.back().words.empty() || attach) ? 0.0f : space_w;
+            float need   = lines.back().words.empty()
+                               ? ww
+                               : lines.back().total_w + gap + ww;
+            if (need > avail_w && !lines.back().words.empty() && !attach) {
                 lines.push_back({});
             }
-            float add = lines.back().words.empty() ? ww : space_w + ww;
+            float add = lines.back().words.empty() ? ww : gap + ww;
             lines.back().total_w += add;
             lines.back().words.push_back(w);
         }
@@ -1078,7 +1234,7 @@ private:
             float x     = x_start;
             bool  first = true;
             for (const auto& w : line.words) {
-                if (!first) { x += space_w; }
+                if (!first && !no_space_before(w.text)) { x += space_w; }
                 page_->place_text(x, cursor_y_, w.style, w.size, w.text);
                 x += tw(w.text, w.style, w.size);
                 first = false;
@@ -1106,6 +1262,8 @@ private:
     minipdf::Page*          page_      = nullptr;
     float                   cursor_y_  = 0.0f;
     float                   content_w_ = 0.0f;
+    int                     figure_counter_ = 0;  ///< auto-incrementing figure number
+    int                     table_counter_  = 0;  ///< auto-incrementing table number
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1313,7 +1471,8 @@ private:
                     if (!hs.empty()) { hint_h = parse_dimension_pts(hs, cw); }
                 }
 
-                layout.image_block(resolved, hint_w, hint_h);
+                layout.image_block(resolved, hint_w, hint_h,
+                                   blk.has_title() ? attrs(blk.title(), doc) : "");
                 break;
             }
 
@@ -1489,14 +1648,14 @@ private:
                        * static_cast<float>(w) / static_cast<float>(total_weight);
         }
 
-        // Build row data with attribute-substituted cell text.
+        // Build row data with attribute-substituted cell text and colspan info.
         std::vector<PdfLayout::TableRowData> rows;
         auto append = [&](const std::vector<TableRow>& src, bool header) {
             for (const auto& row : src) {
                 PdfLayout::TableRowData rd;
                 rd.header = header;
                 for (const auto& cell : row.cells()) {
-                    rd.cells.push_back(attrs(cell->source(), doc));
+                    rd.cells.push_back({attrs(cell->source(), doc), cell->colspan()});
                 }
                 rows.push_back(std::move(rd));
             }
