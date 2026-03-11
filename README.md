@@ -42,42 +42,56 @@ The default build uses a hand-written single-pass block scanner
 (`inline_scanner.hpp`) that together replace all regex use on the hot path.
 No external libraries are needed.
 
-Benchmark: 1 000 in-process iterations, 10-iteration warm-up, GCC 13 `-O2`.
+Benchmark: in-process iterations with warm-up, GCC 13 `-O2`.
+Full BRL-CAD corpus (199 files, ~67 000 lines total).
+
+### BRL-CAD corpus benchmark (199 files)
+
+All timing measured against the complete BRL-CAD documentation corpus from
+[starseeker/brlcad_quickiterate](https://github.com/starseeker/brlcad_quickiterate/tree/asciidoc_only/brlcad/doc/asciidoc)
+(199 `.adoc` files: articles, books, man pages, specs, 50 benchmark rounds):
+
+| Processor | µs / file | Files / sec | vs asciidoctor |
+|---|---|---|---|
+| Ruby Asciidoctor 2.0.26 | ~3 460 µs | ~290 | 1× (reference) |
+| asciiquack PCRE2 (main branch) | ~1 127 µs | ~890 | **~3.1×** faster |
+| asciiquack hand-written scanner | ~421 µs | ~2 375 | **~8.2×** faster |
+
+Run the corpus benchmark yourself:
+
+```bash
+./bench_asciiquack /path/to/brlcad/doc/asciidoc 50
+```
 
 ### Single-file (`benchmark/sample-data/mdbasics.adoc`, 334 lines, ~9 KB)
 
 | Processor | Avg / iter | Conv / sec | vs Asciidoctor |
 |---|---|---|---|
-| Ruby Asciidoctor 2.1.0 | ~2.3 ms | ~440 | 1× (reference) |
-| asciiquack (hand-written scanner) | ~0.27 ms | ~3 700 | **~8.5× faster** |
-
-### BRL-CAD corpus (`benchmark/sample-data/brlcad/`, 9 files, ~3 600 lines)
-
-The sample corpus mirrors real documentation from
-[BRL-CAD](https://github.com/starseeker/brlcad_quickiterate/tree/asciidoc_only/brlcad/doc/asciidoc)
-and exercises articles, man pages, tables, admonitions, code blocks, and
-definition lists.
-
-| Metric | Value |
-|---|---|
-| Files | 9 (4 articles + 5 man pages) |
-| Total lines | ~3 600 |
-| Average per file | ~760 µs |
-| Throughput | ~1 300 files/sec |
-
-Run the corpus benchmark yourself:
-
-```bash
-./bench_asciiquack benchmark/sample-data/brlcad 100
-```
+| Ruby Asciidoctor 2.0.26 | ~3.5 ms | ~290 | 1× (reference) |
+| asciiquack (hand-written scanner) | ~0.24 ms | ~4 200 | **~14× faster** |
 
 ## BRL-CAD compatibility
 
-All AsciiDoc features used by the BRL-CAD documentation set are supported:
+asciiquack was validated against the full BRL-CAD AsciiDoc corpus (199 files).
+All AsciiDoc features used by the documentation set are supported.  Output was
+compared against both the PCRE2-based main-branch asciiquack and Asciidoctor
+2.0.26.
+
+### Regression results (199 files)
+
+| Category | Files affected | Result |
+|---|---|---|
+| No differences (manpages, most HTML) | 181 / 199 | ✓ identical |
+| Block image alt text (stem, not full path) | 18 / 199 | ✓ **improvement** – matches asciidoctor |
+| Inline image URL wrapped in `<a href>` | 1 / 199 | ✓ **bug fix** – old version produced broken HTML |
+| Malformed asterisks (`*******text*****`) | 3 / 199 | ⚠ benign – valid HTML, differs from PCRE2; all processors diverge on degenerate input |
+
+### Features exercised
 
 | Feature | Example | Status |
 |---|---|---|
 | Articles with TOC | `:doctype: article`, `:toc:` | ✓ |
+| Books | `:doctype: book`, chapters, parts | ✓ |
 | Man pages | `:doctype: manpage`, `:mansource:`, `:manmanual:` | ✓ |
 | Definition lists | `*-o*::` , `*term*::` | ✓ |
 | Tables with `cols=` | `[cols="2*"]` | ✓ |
@@ -88,7 +102,7 @@ All AsciiDoc features used by the BRL-CAD documentation set are supported:
 | Example blocks | `[example]` + `====` | ✓ |
 | Block and inline images | `image::path[]`, `image:path[]` | ✓ |
 | Cross-references | `<<anchor>>`, `[[anchor]]` | ✓ |
-| Inline markup | `*bold*`, `_italic_`, `` `mono` `` | ✓ |
+| Nested inline markup | `*bold _italic_ text*`, `` `cmd _arg_` `` | ✓ |
 
 ### Other dependencies
 

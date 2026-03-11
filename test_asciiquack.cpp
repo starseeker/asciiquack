@@ -816,6 +816,80 @@ static void test_html5_inline_image_alt() {
     end_test();
 }
 
+static void test_html5_inline_image_url_not_wrapped() {
+    // Regression: inline image with a URL target must NOT wrap the src in
+    // an <a href="..."> anchor tag.  The old PCRE2 pipeline expanded the URL
+    // as a link macro before placing it in the src attribute, producing broken
+    // HTML like <img src="<a href="http://…">http://…</a>">.
+    begin_test("html5: inline image with URL target – src not wrapped in anchor");
+    std::string out = html("See image:http://example.com/logo.png[,width=64] here.\n");
+    EXPECT_CONTAINS(out, "src=\"http://example.com/logo.png\"");
+    EXPECT(out.find("<a href=") == std::string::npos ||
+           out.find("src=\"<a") == std::string::npos);
+    end_test();
+}
+
+static void test_html5_nested_bold_italic() {
+    begin_test("html5: italic inside bold (*bold _italic_ text*)");
+    std::string out = html("*bold _italic_ text*\n");
+    EXPECT_CONTAINS(out, "<strong>bold <em>italic</em> text</strong>");
+    end_test();
+}
+
+static void test_html5_nested_italic_bold() {
+    begin_test("html5: bold inside italic (_italic *bold* text_)");
+    std::string out = html("_italic *bold* text_\n");
+    EXPECT_CONTAINS(out, "<em>italic <strong>bold</strong> text</em>");
+    end_test();
+}
+
+static void test_html5_italic_inside_backtick() {
+    // Asciidoctor applies the quotes substitution inside `backtick` spans,
+    // so _italic_ inside `code` renders as <em> inside <code>.
+    begin_test("html5: italic inside backtick span (`code _var_`)");
+    {
+        std::string out = html("`cmd _arg_`\n");
+        EXPECT_CONTAINS(out, "<code>cmd <em>arg</em></code>");
+    }
+    {
+        // BRL-CAD gcv.adoc pattern
+        std::string out = html("`gcv_ _plugin_name_`\n");
+        EXPECT_CONTAINS(out, "<code>gcv_ <em>plugin_name</em></code>");
+    }
+    {
+        // Option table pattern from BRL-CAD books
+        std::string out = html("`--colors=_path_`\n");
+        EXPECT_CONTAINS(out, "<code>--colors=<em>path</em></code>");
+    }
+    end_test();
+}
+
+static void test_html5_brlcad_option_style() {
+    // BRL-CAD man-page convention: *-flag _metavar_* in a list item.
+    // This must render the metavar in italic inside the bold span.
+    begin_test("html5: BRL-CAD option style (*-i _input_file_*)");
+    std::string out = html("* *-i _input_file_* - sets input file.\n");
+    EXPECT_CONTAINS(out, "<strong>-i <em>input_file</em></strong>");
+    end_test();
+}
+
+static void test_html5_block_image_alt_stem() {
+    // Block image with no positional alt must derive the alt from the
+    // filename stem (matching asciidoctor), not the full path.
+    begin_test("html5: block image no-alt uses filename stem");
+    {
+        std::string out = html("image::../articles/images/gcv_arch.png[]\n");
+        EXPECT_CONTAINS(out, "alt=\"gcv_arch\"");
+        EXPECT(out.find("alt=\"../articles") == std::string::npos);
+    }
+    {
+        // URL targets: stem is everything after the last '/'
+        std::string out = html("image::http://example.com/logo.png[]\n");
+        EXPECT_CONTAINS(out, "alt=\"logo\"");
+    }
+    end_test();
+}
+
 static void test_html5_table() {
     begin_test("html5: basic table");
     std::string out = html("|===\n|Col1 |Col2\n|a |b\n|===\n");
@@ -6211,6 +6285,71 @@ static void test_inline_scanner_direct() {
     end_test();
 }
 
+static void test_inline_scanner_nested_spans() {
+    begin_test("inline scanner: nested span markup (recursive content processing)");
+
+    // Bold containing italic: *bold _italic_ text*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*bold _italic_ text*"),
+              "<strong>bold <em>italic</em> text</strong>");
+
+    // Italic containing bold: _italic *bold* text_
+    EXPECT_EQ(asciiquack::scan_inline_quotes("_italic *bold* text_"),
+              "<em>italic <strong>bold</strong> text</em>");
+
+    // Double-bold containing italic: **bold _italic_ text**
+    EXPECT_EQ(asciiquack::scan_inline_quotes("**bold _italic_ text**"),
+              "<strong>bold <em>italic</em> text</strong>");
+
+    // Double-italic containing bold: __italic *bold* text__
+    EXPECT_EQ(asciiquack::scan_inline_quotes("__italic *bold* text__"),
+              "<em>italic <strong>bold</strong> text</em>");
+
+    // BRL-CAD man-page option style: *-e _script_*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*-e _script_*"),
+              "<strong>-e <em>script</em></strong>");
+
+    // BRL-CAD option with path: *-i _input_file_*
+    EXPECT_EQ(asciiquack::scan_inline_quotes("*-i _input_file_*"),
+              "<strong>-i <em>input_file</em></strong>");
+
+    end_test();
+}
+
+static void test_inline_scanner_code_inner_subs() {
+    begin_test("inline scanner: inline markup inside backtick code spans");
+
+    // Asciidoctor applies the quotes substitution inside `backtick` spans.
+    // `code _var_` → <code>code <em>var</em></code>
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd _arg_`"),
+              "<code>cmd <em>arg</em></code>");
+
+    // Bold inside backtick
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd *val*`"),
+              "<code>cmd <strong>val</strong></code>");
+
+    // Nested bold+italic inside backtick
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`cmd *bold _italic_ end*`"),
+              "<code>cmd <strong>bold <em>italic</em> end</strong></code>");
+
+    // Double-backtick also applies substitutions
+    EXPECT_EQ(asciiquack::scan_inline_quotes("``code _var_``"),
+              "<code>code <em>var</em></code>");
+
+    // BRL-CAD gcv.adoc pattern: `gcv_ _plugin_name_`
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`gcv_ _plugin_name_`"),
+              "<code>gcv_ <em>plugin_name</em></code>");
+
+    // BRL-CAD option table: `--colors=_path_`
+    EXPECT_EQ(asciiquack::scan_inline_quotes("`--colors=_path_`"),
+              "<code>--colors=<em>path</em></code>");
+
+    // Plus-mono is verbatim (NOT a code span; legacy passthrough behaviour)
+    EXPECT_EQ(asciiquack::scan_inline_quotes("+cmd _arg_+"),
+              "<code>cmd _arg_</code>");
+
+    end_test();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Hand-written block scanner tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6739,6 +6878,12 @@ int main(int argc, char* argv[]) {
     test_html5_image();
     test_html5_inline_image();
     test_html5_inline_image_alt();
+    test_html5_inline_image_url_not_wrapped();
+    test_html5_block_image_alt_stem();
+    test_html5_nested_bold_italic();
+    test_html5_nested_italic_bold();
+    test_html5_italic_inside_backtick();
+    test_html5_brlcad_option_style();
     test_html5_table();
     test_html5_link_relative();
 
@@ -6958,6 +7103,8 @@ int main(int argc, char* argv[]) {
     test_inline_scanner_boundaries();
     test_inline_scanner_unconstrained_fallthrough();
     test_inline_scanner_direct();
+    test_inline_scanner_nested_spans();
+    test_inline_scanner_code_inner_subs();
 
     // Block scanner tests (always active)
     std::cout << "\nblock scanner tests:\n";

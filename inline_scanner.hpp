@@ -44,21 +44,27 @@
 /// == Patterns handled (identical semantics to sub_quotes()) ==
 ///
 ///   Unconstrained (double markers, no boundary restriction):
-///     **text**  → <strong>text</strong>
-///     __text__  → <em>text</em>
-///     ``text``  → <code>text</code>
-///     ##text##  → <mark>text</mark>
-///     ^^text^^  → <sup>text</sup>
-///     ~~text~~  → <sub>text</sub>
+///     **text**  → <strong>text</strong>   (content recursively processed)
+///     __text__  → <em>text</em>           (content recursively processed)
+///     ``text``  → <code>text</code>       (content recursively processed)
+///     ##text##  → <mark>text</mark>       (content recursively processed)
+///     ^^text^^  → <sup>text</sup>         (content recursively processed)
+///     ~~text~~  → <sub>text</sub>         (content recursively processed)
 ///
 ///   Constrained (single markers, boundary rules apply):
-///     *text*    → <strong>text</strong>
-///     _text_    → <em>text</em>
-///     `text`    → <code>text</code>
-///     +text+    → <code>text</code>  (legacy monospace)
-///     #text#    → <mark>text</mark>  (content must start/end with alnum)
+///     *text*    → <strong>text</strong>   (content recursively processed)
+///     _text_    → <em>text</em>           (content recursively processed)
+///     `text`    → <code>text</code>       (content recursively processed)
+///     +text+    → <code>text</code>  (legacy monospace; verbatim)
+///     #text#    → <mark>text</mark>       (content recursively processed)
 ///     ^text^    → <sup>text</sup>    (no whitespace in content)
 ///     ~text~    → <sub>text</sub>    (no whitespace in content)
+///
+/// Recursive processing: the content of all span types except `+plus+` is
+/// passed through scan_inline_quotes() so that nested inline markup is
+/// rendered (e.g. `code _var_` renders italic inside the code span,
+/// matching asciidoctor's "normal" substitution group for monospace spans).
+/// Only `+plus+` (legacy monospace passthrough) is verbatim.
 
 #pragma once
 
@@ -241,7 +247,7 @@ namespace asciiquack {
                 close = find_double_close(i + 2, '*');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<strong>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</strong>";
                     i = close + 2;
                     continue;
@@ -253,7 +259,7 @@ namespace asciiquack {
                 close = find_const_close(i + 1, '*');
                 if (close != std::string::npos) {
                     out += "<strong>";
-                    out.append(text, i + 1, close - i - 1);
+                    out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                     out += "</strong>";
                     i = close + 1;
                     continue;
@@ -268,7 +274,7 @@ namespace asciiquack {
                 close = find_double_close(i + 2, '_');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<em>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</em>";
                     i = close + 2;
                     continue;
@@ -280,7 +286,7 @@ namespace asciiquack {
                 close = find_const_close(i + 1, '_');
                 if (close != std::string::npos) {
                     out += "<em>";
-                    out.append(text, i + 1, close - i - 1);
+                    out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                     out += "</em>";
                     i = close + 1;
                     continue;
@@ -289,13 +295,18 @@ namespace asciiquack {
         }
 
         // ── '`' ───────────────────────────────────────────────────────────────
+        //
+        // Backtick code spans (`single` and ``double``) apply the quotes
+        // substitution to their content, matching asciidoctor's "normal" subs
+        // for constrained monospace.  Content may therefore contain nested
+        // inline markup such as _italic_ or *bold*.
         else if (c == '`') {
             // Unconstrained ``...``
             if (i + 1 < n && text[i + 1] == '`') {
                 close = find_double_close(i + 2, '`');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<code>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</code>";
                     i = close + 2;
                     continue;
@@ -307,7 +318,7 @@ namespace asciiquack {
                 close = find_const_close(i + 1, '`');
                 if (close != std::string::npos) {
                     out += "<code>";
-                    out.append(text, i + 1, close - i - 1);
+                    out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                     out += "</code>";
                     i = close + 1;
                     continue;
@@ -322,7 +333,7 @@ namespace asciiquack {
                 close = find_double_close(i + 2, '#');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<mark>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</mark>";
                     i = close + 2;
                     continue;
@@ -334,7 +345,7 @@ namespace asciiquack {
                 close = find_hash_close(i + 1);
                 if (close != std::string::npos) {
                     out += "<mark>";
-                    out.append(text, i + 1, close - i - 1);
+                    out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                     out += "</mark>";
                     i = close + 1;
                     continue;
@@ -349,7 +360,7 @@ namespace asciiquack {
                 close = find_double_close(i + 2, '^');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<sup>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</sup>";
                     i = close + 2;
                     continue;
@@ -363,7 +374,7 @@ namespace asciiquack {
             close = find_nowhitespace_close(i + 1, '^');
             if (close != std::string::npos) {
                 out += "<sup>";
-                out.append(text, i + 1, close - i - 1);
+                out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                 out += "</sup>";
                 i = close + 1;
                 continue;
@@ -377,7 +388,7 @@ namespace asciiquack {
                 close = find_double_close(i + 2, '~');
                 if (close != std::string::npos && close > i + 2) {
                     out += "<sub>";
-                    out.append(text, i + 2, close - i - 2);
+                    out += scan_inline_quotes(std::string(text, i + 2, close - i - 2));
                     out += "</sub>";
                     i = close + 2;
                     continue;
@@ -388,7 +399,7 @@ namespace asciiquack {
             close = find_nowhitespace_close(i + 1, '~');
             if (close != std::string::npos) {
                 out += "<sub>";
-                out.append(text, i + 1, close - i - 1);
+                out += scan_inline_quotes(std::string(text, i + 1, close - i - 1));
                 out += "</sub>";
                 i = close + 1;
                 continue;
@@ -396,6 +407,8 @@ namespace asciiquack {
         }
 
         // ── '+' ───────────────────────────────────────────────────────────────
+        //
+        // Legacy monospace is verbatim (same as backtick code spans).
         else if (c == '+') {
             // Constrained +...+ (legacy monospace, no unconstrained form)
             if (ok_open_plus()) {
