@@ -1920,7 +1920,19 @@ std::shared_ptr<List> Parser::parse_list(
                         auto sub_list = parse_list(reader, *item,
                                                    list_type, nxt, sub_attrs);
                         if (sub_list) { item->append(sub_list); }
-                        continue;
+                        // After attaching the sub-list, continue collecting only
+                        // if the next line is another list item or an explicit '+'
+                        // continuation.  A plain paragraph line after the sub-list
+                        // belongs to the parent context, not this list item.
+                        {
+                            auto after = reader.peek_line();
+                            if (!after) { break; }
+                            std::string after_str{*after};
+                            if (is_blank(after_str)) { break; }
+                            if (after_str == "+") { continue; }
+                            if (match_list_item(after_str)) { continue; }
+                            break;
+                        }
                     } else if (next_level < root_level) {
                         // Shallower item – return to parent
                         break;

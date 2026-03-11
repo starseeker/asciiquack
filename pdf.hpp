@@ -1003,15 +1003,82 @@ public:
 
     // ── Ordered list item ─────────────────────────────────────────────────────
 
-    void ordered_item(int number, const std::string& text, int depth = 0) {
+    // ── Ordered-list label helpers ────────────────────────────────────────────
+
+    /// Convert @p n to a lowercase Roman numeral string (e.g. 1→"i", 4→"iv").
+    static std::string to_lower_roman(int n) {
+        static const struct { int v; const char* s; } tbl[] = {
+            {1000,"m"},{900,"cm"},{500,"d"},{400,"cd"},{100,"c"},{90,"xc"},
+            {50,"l"},{40,"xl"},{10,"x"},{9,"ix"},{5,"v"},{4,"iv"},{1,"i"}
+        };
+        std::string r;
+        for (const auto& e : tbl) {
+            while (n >= e.v) { r += e.s; n -= e.v; }
+        }
+        return r;
+    }
+
+    /// Generate an ordered-list label string for item @p number at @p depth
+    /// using the asciidoctor auto-style rules when no explicit style is set.
+    /// @p style overrides the depth-based choice (Arabic=always numbers, etc.).
+    static std::string ordered_label(int number, int depth,
+                                     OrderedListStyle style) {
+        // Auto-select style from depth when not explicitly overridden
+        if (style == OrderedListStyle::Arabic) {
+            // Depth-based default (asciidoctor behaviour)
+            switch (depth % 5) {
+                case 0: break;                        // Arabic (falls through)
+                case 1: style = OrderedListStyle::LowerAlpha; break;
+                case 2: style = OrderedListStyle::LowerRoman; break;
+                case 3: style = OrderedListStyle::UpperAlpha; break;
+                case 4: style = OrderedListStyle::UpperRoman; break;
+            }
+        }
+        switch (style) {
+            case OrderedListStyle::LowerAlpha: {
+                // a. b. … z. aa. ab. …
+                std::string s;
+                int n = number - 1;
+                do {
+                    s = static_cast<char>('a' + n % 26) + s;
+                    n = n / 26 - 1;
+                } while (n >= 0);
+                return s + ".";
+            }
+            case OrderedListStyle::UpperAlpha: {
+                std::string s;
+                int n = number - 1;
+                do {
+                    s = static_cast<char>('A' + n % 26) + s;
+                    n = n / 26 - 1;
+                } while (n >= 0);
+                return s + ".";
+            }
+            case OrderedListStyle::LowerRoman:
+                return to_lower_roman(number) + ".";
+            case OrderedListStyle::UpperRoman: {
+                std::string r = to_lower_roman(number);
+                for (char& c : r) { c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); }
+                return r + ".";
+            }
+            default: // Arabic
+                return std::to_string(number) + ".";
+        }
+    }
+
+    void ordered_item(int number, const std::string& text, int depth = 0,
+                      OrderedListStyle style = OrderedListStyle::Arabic) {
         float lh     = BODY_SIZE * LINE_RATIO;
         float indent = static_cast<float>(depth) * 18.0f + 22.0f;
 
         ensure_space(lh);
 
-        std::string label = std::to_string(number) + ".";
-        page_->place_text(MARGIN_LEFT + indent - static_cast<float>(label.size()) * 6.0f - 4.0f,
-                          cursor_y_,
+        std::string label = ordered_label(number, depth, style);
+        // Right-align the label just to the left of the text indent.
+        // Use actual text width so roman numerals (e.g. "viii.") align correctly.
+        float lw = tw(label, minipdf::FontStyle::Regular, BODY_SIZE);
+        float label_x = MARGIN_LEFT + indent - lw - 3.0f;
+        page_->place_text(label_x, cursor_y_,
                           minipdf::FontStyle::Regular, BODY_SIZE, label);
 
         auto spans = parse_spans(text);
@@ -1739,9 +1806,15 @@ private:
         if (list.has_title()) {
             layout.block_title(attrs(list.title(), doc));
         }
+        // Determine starting counter from start= attribute (default 1)
         int n = 1;
+        const std::string& start_attr = list.attr("start");
+        if (!start_attr.empty()) {
+            try { n = std::stoi(start_attr); } catch (...) {}
+        }
+        OrderedListStyle style = list.ordered_style();
         for (const auto& item : list.items()) {
-            layout.ordered_item(n, attrs(item->source(), doc), depth);
+            layout.ordered_item(n, attrs(item->source(), doc), depth, style);
             for (const auto& child : item->blocks()) {
                 render_block(*child, doc, layout, depth + 1);
             }

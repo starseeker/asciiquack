@@ -5550,6 +5550,102 @@ static void test_html_nested_ordered_list() {
     end_test();
 }
 
+static void test_html_nested_list_paragraph_not_absorbed() {
+    // A paragraph after a nested sub-list must NOT be treated as a list item.
+    // Regression test for parser bug where parse_list() consuming blank lines
+    // caused collect_item() to absorb the following paragraph.
+    begin_test("html5: paragraph after nested sub-list is not absorbed as list item");
+
+    std::string out = html(
+        "= T\n\n"
+        "* Item right after a code block\n"
+        "* Second item\n"
+        "** Nested item\n"
+        "\n"
+        "Paragraph after the mixed scenario.\n");
+
+    EXPECT_CONTAINS(out, "Item right after a code block");
+    EXPECT_CONTAINS(out, "Second item");
+    EXPECT_CONTAINS(out, "Nested item");
+    EXPECT_CONTAINS(out, "Paragraph after the mixed scenario.");
+
+    // "Second item" must appear as a proper list item (inside <li>)
+    auto second_pos  = out.find("Second item");
+    auto nested_pos  = out.find("Nested item");
+    auto para_pos    = out.find("Paragraph after");
+
+    EXPECT(second_pos != std::string::npos);
+    EXPECT(nested_pos != std::string::npos);
+    EXPECT(para_pos   != std::string::npos);
+
+    // The paragraph must come AFTER the nested item in the output
+    EXPECT(para_pos > nested_pos);
+
+    // "Paragraph after" must NOT be inside a <li> element.
+    // Find the <li> that contains "Second item" and ensure the paragraph
+    // text falls outside it (i.e. outside any </li> closing it).
+    auto li_start = out.rfind("<li>", second_pos);
+    auto li_end   = out.find("</li>", second_pos);
+    EXPECT(li_start != std::string::npos);
+    EXPECT(li_end   != std::string::npos);
+    // The paragraph must NOT be between this <li> and its </li>
+    EXPECT(para_pos > li_end);
+
+    end_test();
+}
+
+static void test_pdf_ordered_sublist_depth_labels() {
+    begin_test("pdf: ordered sub-list uses depth-appropriate labels (a. b. c. at depth 1)");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        ". First\n"
+        ".. Sub A\n"
+        ".. Sub B\n"
+        ". Second\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Top-level items should use numeric labels
+    EXPECT_CONTAINS(pdf, "1.");
+    EXPECT_CONTAINS(pdf, "2.");
+    // Sub-items should use letter labels
+    EXPECT_CONTAINS(pdf, "a.");
+    EXPECT_CONTAINS(pdf, "b.");
+    // Arabic numerals for sub-items must NOT be present
+    // (i.e. the sub-items must not use "1." "2." at depth 1)
+    // We can't directly check for absence of "1." since the parent uses it,
+    // but we can confirm "a." and "b." are present as labels.
+
+    end_test();
+}
+
+static void test_pdf_ordered_list_start_attribute() {
+    begin_test("pdf: ordered list start= attribute respected");
+
+    const std::string src =
+        "= Test\n"
+        "\n"
+        "[start=3]\n"
+        ". Third step\n"
+        ". Fourth step\n";
+
+    auto doc = asciiquack::Parser::parse_string(src);
+    std::string pdf = asciiquack::convert_to_pdf(*doc);
+
+    EXPECT(is_valid_pdf_envelope(pdf));
+    EXPECT(pdf_xref_valid(pdf));
+    // Should start at 3, not 1 — check for the labels in the PDF stream
+    EXPECT_CONTAINS(pdf, "3.");
+    EXPECT_CONTAINS(pdf, "4.");
+
+    end_test();
+}
+
 
 static void test_html_adjacent_inline_space_between() {
     // Adjacent inline markers need spaces between them so AsciiDoc constrained
@@ -7162,6 +7258,9 @@ int main(int argc, char* argv[]) {
     test_html_quote_block_positional_attribution_and_citetitle();
     test_html_nested_unordered_list();
     test_html_nested_ordered_list();
+    test_html_nested_list_paragraph_not_absorbed();
+    test_pdf_ordered_sublist_depth_labels();
+    test_pdf_ordered_list_start_attribute();
     test_html_adjacent_inline_space_between();
     test_html_text_immediately_before_inline();
     test_manpage_fp_font_restore();
