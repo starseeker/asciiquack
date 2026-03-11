@@ -1,8 +1,9 @@
 /// @file inline_scanner.hpp
 /// @brief Hand-written single-pass scanner for AsciiDoc inline quote markup.
 ///
-/// This file provides @c scan_inline_quotes(), a drop-in replacement for the
-/// PCRE2-regex-based @c sub_quotes() in substitutors.hpp.
+/// This file provides @c scan_inline_quotes(), the definitive implementation
+/// of inline-quote substitution, replacing the former regex-based @c sub_quotes()
+/// that previously existed in substitutors.hpp.
 ///
 /// == Why a hand-written scanner instead of re2c / lemon? ==
 ///

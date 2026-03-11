@@ -573,7 +573,7 @@ static bool parse_single_author(const std::string& part, AuthorInfo& out) {
         }
     }
 
-    if (words.empty()) { return !out.email.empty() ? false : false; }
+    if (words.empty()) { return false; }
     if (!is_author_word(words[0])) { return false; }
 
     out.firstname = words[0];

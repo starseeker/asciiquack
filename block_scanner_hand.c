@@ -849,10 +849,10 @@ int aq_parse_attr_list(const char    *content,
 
             if (v_e > v_s) {
                 char key[16];
-                int  kn = snprintf(key, sizeof(key), "%d", positional_idx++);
-                if (kn > 0) {
+                int  key_len = snprintf(key, sizeof(key), "%d", positional_idx++);
+                if (key_len > 0) {
                     cb(userdata,
-                       key,  (size_t)kn,
+                       key,  (size_t)key_len,
                        v_s,  (size_t)(v_e - v_s));
                 }
             }
