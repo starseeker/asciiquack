@@ -11,6 +11,31 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ── Optimisation: promote Release builds to -O3 when the compiler supports it ─
+#
+# CMake's default CMAKE_CXX_FLAGS_RELEASE is already "-O3 -DNDEBUG" with GCC
+# and Clang, so for those compilers this block is a documented no-op that makes
+# the intent explicit and visible in the build log.  On compilers where Release
+# defaults to a lower level (e.g. MSVC uses /O2) the check silently skips the
+# flag so the build stays valid everywhere.
+#
+# check_cxx_compiler_flag() compiles a small test TU with the candidate flag and
+# sets the result variable to TRUE only when the compilation succeeds without
+# error.  This is the CMake-recommended way to probe optional compiler flags.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-O3 COMPILER_SUPPORTS_O3)
+if(COMPILER_SUPPORTS_O3)
+    # Apply only to optimised build types to avoid slowing down Debug builds.
+    add_compile_options(
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:RelWithDebInfo>:-O3>
+        $<$<CONFIG:MinSizeRel>:-O3>
+    )
+    message(STATUS "  Optimisation : -O3 supported and enabled for Release builds")
+else()
+    message(STATUS "  Optimisation : -O3 not supported by this compiler; using defaults")
+endif()
+
 # ── Compiler warnings ─────────────────────────────────────────────────────────
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options(
@@ -225,6 +250,7 @@ message(STATUS "asciiquack ${PROJECT_VERSION}")
 message(STATUS "  Build type   : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard : C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "  -O3 enabled  : ${COMPILER_SUPPORTS_O3}")
 message(STATUS "  Tests        : ${BUILD_TESTS}")
 message(STATUS "  Benchmark    : ${BUILD_BENCHMARK}")
 message(STATUS "")

@@ -42,20 +42,23 @@ The default build uses a hand-written single-pass block scanner
 (`inline_scanner.hpp`) that together replace all regex use on the hot path.
 No external libraries are needed.
 
-Benchmark: in-process iterations with warm-up, GCC 13 `-O2`.
-Full BRL-CAD corpus (199 files, ~67 000 lines total).
+**Optimisation level:** CMake's `Release` build type already applies
+`-O3 -DNDEBUG` with GCC and Clang.  The CMakeLists.txt also explicitly probes
+for `-O3` support via `check_cxx_compiler_flag` so that the flag is visible in
+the build log and is guaranteed even on compilers where the Release default is
+lower.  All benchmark numbers below are at `-O3` (GCC 13.3.0).
 
-### BRL-CAD corpus benchmark (199 files)
+### BRL-CAD corpus benchmark (197 files)
 
 All timing measured against the complete BRL-CAD documentation corpus from
 [starseeker/brlcad_quickiterate](https://github.com/starseeker/brlcad_quickiterate/tree/asciidoc_only/brlcad/doc/asciidoc)
-(199 `.adoc` files: articles, books, man pages, specs, 50 benchmark rounds):
+(197 `.adoc` files: articles, books, man pages, specs, 50 benchmark rounds, `-O3`):
 
 | Processor | µs / file | Files / sec | vs asciidoctor |
 |---|---|---|---|
 | Ruby Asciidoctor 2.0.26 | ~3 460 µs | ~290 | 1× (reference) |
-| asciiquack PCRE2 (main branch) | ~1 127 µs | ~890 | **~3.1×** faster |
-| asciiquack hand-written scanner | ~421 µs | ~2 375 | **~8.2×** faster |
+| asciiquack PCRE2 (main branch) | ~1 126 µs | ~890 | **~3.1×** faster |
+| asciiquack hand-written scanner | ~422 µs | ~2 370 | **~8.2×** faster |
 
 Run the corpus benchmark yourself:
 
