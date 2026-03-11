@@ -1,8 +1,19 @@
 ```
+= asciiquack
+:doctype: duck
+:quack: true
+
+// parsing...
+
      __
    <(o )___
     ( ._> /
      `---'
+
+----
+quack:: true
+duck:: ascii
+----
 ```
 
 **asciiquack** is a fast, self-contained C++17 AsciiDoc processor compatible
