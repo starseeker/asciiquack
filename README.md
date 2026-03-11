@@ -257,7 +257,6 @@ All dependencies are vendored; no system packages are required.
 | [LodePNG](https://github.com/lvandeve/lodepng) | PNG image decoding |
 | [Noto fonts](https://fonts.google.com/noto) | Default PDF fonts (in `fonts/`, path set at build time) |
 | [µlight](https://github.com/eisenwave/ulight) | Syntax highlighting (C++23 builds only) |
-| [PCRE2](https://www.pcre.org/) (embedded subset) | Regex backend (5× faster than `std::regex`) |
 
 
 ## References
