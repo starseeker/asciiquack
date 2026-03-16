@@ -140,9 +140,10 @@ implementation - making AsciiDoc processing self contained wasn't possible with
 available tools.
 
 Creating a C++ version of asciidoctor was a possibility, but as a manual effort
-it would have consumed more time than could be justified.  However, experimentation
+it would have consumed more time than could be justified (9-12 weeks for basic
+functionality + testing was the initial estimate from Copilot).  However, experimentation
 in 2026 proved the translation problem was amenable to agentic AI methods - which
-is how we ended up with asciiquack.
+is how we ended up with asciiquack - largely in the course of one weekend.
 
 The feature set we're focusing on is the one needed for BRL-CAD documentation.  We
 are NOT aiming to duplicate the entirity of asciidoctor's feature set (even with AI,
