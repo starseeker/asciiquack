@@ -261,7 +261,7 @@ ulight_configure(asciiquack)
 # ── Tests ─────────────────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build the C++ test suite" ON)
 
-if(BUILD_TESTS)
+if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_asciiquack.cpp)
     enable_testing()
 
     add_executable(asciiquack_tests
@@ -283,7 +283,7 @@ endif()
 # ── Benchmark ─────────────────────────────────────────────────────────────────
 option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
 
-if(BUILD_BENCHMARK)
+if(BUILD_BENCHMARK and EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
         parser.cpp
