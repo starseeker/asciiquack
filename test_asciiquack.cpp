@@ -11,9 +11,13 @@
 #include "document.hpp"
 #include "html5.hpp"
 #include "manpage.hpp"
+#ifdef ASCIIQUACK_USE_PDF
 #include "minipdf.hpp"
+#endif
 #include "parser.hpp"
+#ifdef ASCIIQUACK_USE_PDF
 #include "pdf.hpp"
+#endif
 #include "reader.hpp"
 #include "substitutors.hpp"
 
@@ -3592,6 +3596,7 @@ static void test_unclosed_block_warning() {
 // ─────────────────────────────────────────────────────────────────────────────
 // PDF backend tests
 // ─────────────────────────────────────────────────────────────────────────────
+#ifdef ASCIIQUACK_USE_PDF
 
 /// Check that @p pdf starts with the standard PDF header and ends with %%EOF.
 static bool is_valid_pdf_envelope(const std::string& pdf) {
@@ -5496,6 +5501,8 @@ static void test_minipdf_png_missing_returns_nullptr() {
     end_test();
 }
 
+#endif  // ASCIIQUACK_USE_PDF
+
 // ─────────────────────────────────────────────────────────────────────────────
 // XSL inline-element trailing-space fix (rendered via asciiquack)
 // These tests verify that text rendered from XSL-produced AsciiDoc (where
@@ -5671,6 +5678,7 @@ static void test_html_nested_list_paragraph_not_absorbed() {
     end_test();
 }
 
+#ifdef ASCIIQUACK_USE_PDF
 static void test_pdf_ordered_sublist_depth_labels() {
     begin_test("pdf: ordered sub-list uses depth-appropriate labels (a. b. c. at depth 1)");
 
@@ -5722,6 +5730,8 @@ static void test_pdf_ordered_list_start_attribute() {
 
     end_test();
 }
+
+#endif  // ASCIIQUACK_USE_PDF
 
 
 static void test_html_adjacent_inline_space_between() {
@@ -7278,6 +7288,7 @@ int main(int argc, char* argv[]) {
     test_docbook5_image();
 
     // PDF backend
+#ifdef ASCIIQUACK_USE_PDF
     std::cout << "\nPDF backend tests:\n";
     test_pdf_basic_structure();
     test_pdf_a4_size();
@@ -7331,6 +7342,7 @@ int main(int argc, char* argv[]) {
     test_pdf_image_dimension_inches();
     test_pdf_image_dimension_pixels();
     test_minipdf_png_missing_returns_nullptr();
+#endif  // ASCIIQUACK_USE_PDF
     test_html_bold_adjacent_text_no_fusion();
     test_html_inline_option_trailing_space_preserved();
     test_html_quote_block_positional_attribution();
@@ -7338,8 +7350,10 @@ int main(int argc, char* argv[]) {
     test_html_nested_unordered_list();
     test_html_nested_ordered_list();
     test_html_nested_list_paragraph_not_absorbed();
+#ifdef ASCIIQUACK_USE_PDF
     test_pdf_ordered_sublist_depth_labels();
     test_pdf_ordered_list_start_attribute();
+#endif  // ASCIIQUACK_USE_PDF
     test_html_adjacent_inline_space_between();
     test_html_text_immediately_before_inline();
     test_manpage_fp_font_restore();

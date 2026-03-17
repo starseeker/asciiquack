@@ -16,7 +16,9 @@
 #include "html5.hpp"
 #include "manpage.hpp"
 #include "parser.hpp"
+#ifdef ASCIIQUACK_USE_PDF
 #include "pdf.hpp"
+#endif
 #include "reader.hpp"
 
 #include <cstdlib>
@@ -132,7 +134,9 @@ static int convert_one(const std::string&    source_path,
         std::string suffix = ".html";
         if (params.backend == "docbook5")  { suffix = ".xml"; }
         else if (params.backend == "manpage") { suffix = ".1"; }
+#ifdef ASCIIQUACK_USE_PDF
         else if (params.backend == "pdf")  { suffix = ".pdf"; }
+#endif
         out_path = (out_dir / in.stem()).string() + suffix;
     }
 
@@ -144,6 +148,7 @@ static int convert_one(const std::string&    source_path,
         output = asciiquack::convert_to_html5(*doc);
     } else if (params.backend == "manpage") {
         output = asciiquack::convert_to_manpage(*doc);
+#ifdef ASCIIQUACK_USE_PDF
     } else if (params.backend == "pdf") {
         bool a4 = (params.attributes.count("pdf-page-size") &&
                    params.attributes.at("pdf-page-size") == "A4");
@@ -184,6 +189,12 @@ static int convert_one(const std::string&    source_path,
             source_path != "<stdin>"
                 ? fs::path{source_path}.parent_path().string()
                 : "");
+#else
+    } else if (params.backend == "pdf") {
+        std::cerr << "asciiquack: PDF output is not available in this build "
+                     "(compiled without minipdf/lodepng support)\n";
+        return 1;
+#endif
     } else if (params.backend == "docbook5" || params.backend == "docbook") {
         output = asciiquack::convert_to_docbook5(*doc);
     } else {
@@ -216,7 +227,11 @@ int main(int argc, char* argv[]) {
 
     options.add_options("Conversion")
         ("b,backend",
+#ifdef ASCIIQUACK_USE_PDF
             "Output format: html5, xhtml5, manpage, docbook5, pdf (default: html5)",
+#else
+            "Output format: html5, xhtml5, manpage, docbook5 (default: html5)",
+#endif
             cxxopts::value<std::string>()->default_value("html5"))
         ("d,doctype",
             "Document type: article, book, manpage, inline (default: article)",
