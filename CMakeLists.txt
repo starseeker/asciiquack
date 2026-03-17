@@ -283,7 +283,7 @@ endif()
 # ── Benchmark ─────────────────────────────────────────────────────────────────
 option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
 
-if(BUILD_BENCHMARK and EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark)
+if(BUILD_BENCHMARK AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
         parser.cpp
