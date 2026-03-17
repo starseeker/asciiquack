@@ -31,9 +31,13 @@ if(COMPILER_SUPPORTS_O3)
         $<$<CONFIG:RelWithDebInfo>:-O3>
         $<$<CONFIG:MinSizeRel>:-O3>
     )
-    message(STATUS "  Optimisation : -O3 supported and enabled for Release builds")
+    if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+       message(STATUS "  Optimisation : -O3 supported and enabled for Release builds")
+    endif()
 else()
-    message(STATUS "  Optimisation : -O3 not supported by this compiler; using defaults")
+    if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+       message(STATUS "  Optimisation : -O3 not supported by this compiler; using defaults")
+    endif()
 endif()
 
 # ── Compiler warnings ─────────────────────────────────────────────────────────
@@ -79,9 +83,6 @@ function(aqscanner_configure target)
     )
 endfunction()
 
-message(STATUS "  Parser stack: hand-written (block_scanner_hand.c + inline_scanner.hpp)")
-message(STATUS "                no PCRE2, re2c, or lemon required")
-
 # ── Syntax highlighting via µlight ────────────────────────────────────────────
 # µlight (vendor/ulight/) requires C++23 to build; the project itself stays at
 # C++17.  The two can coexist in one binary because the interface between them
@@ -105,8 +106,10 @@ set(_ulight_enabled FALSE)
 if(USE_ULIGHT)
     # First check that the vendor/ulight source tree is actually present.
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/ulight/src/ulight.cpp")
-        message(STATUS "  Syntax highlighting (ulight): DISABLED "
+       if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+          message(STATUS "  Syntax highlighting (ulight): DISABLED "
                        "(vendor/ulight/ sources not found in source tree)")
+       endif()
     else()
         # Probe for the specific C++23 features ulight uses: std::expected,
         # char8_t, consteval, if !consteval, and static lambdas.
@@ -122,8 +125,10 @@ if(USE_ULIGHT)
         if(_ulight_cxx23_ok)
             set(_ulight_enabled TRUE)
         else()
+          if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
             message(STATUS "  Syntax highlighting (ulight): DISABLED "
                            "(compiler does not support required C++23 features)")
+          endif()
         endif()
     endif()
 endif()
@@ -175,9 +180,13 @@ if(_ulight_enabled)
         target_compile_options(ulight_vendor PRIVATE /w)
     endif()
 
-    message(STATUS "  Syntax highlighting: embedded µlight (C++23 TUs, C API)")
+    if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+      message(STATUS "  Syntax highlighting: embedded µlight (C++23 TUs, C API)")
+    endif()
 else()
-    message(STATUS "  Syntax highlighting: disabled")
+    if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+      message(STATUS "  Syntax highlighting: disabled")
+    endif()
 endif()
 
 # Helper: attach µlight to a target when it is available.
@@ -213,8 +222,10 @@ if(USE_PDF)
        EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/lodepng.cpp")
         set(_pdf_enabled TRUE)
     else()
+      if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
         message(STATUS "  PDF output : DISABLED "
                        "(vendor/minipdf.cpp or vendor/lodepng.cpp not found in source tree)")
+      endif()
     endif()
 endif()
 
@@ -222,13 +233,19 @@ if(_pdf_enabled)
     # Check for bundled Noto fonts; define the dir macro only when present.
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
         set(_noto_fonts_dir "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
+      if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
         message(STATUS "  PDF output : enabled (minipdf + lodepng)")
         message(STATUS "  Noto fonts : ${_noto_fonts_dir}")
+      endif()
     else()
+      if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
         message(STATUS "  PDF output : enabled (minipdf + lodepng; no bundled Noto fonts)")
+      endif()
     endif()
 else()
-    message(STATUS "  PDF output : disabled")
+    if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+      message(STATUS "  PDF output : disabled")
+    endif()
 endif()
 
 # Helper: attach PDF sources and compile definitions to a target.
@@ -301,6 +318,8 @@ if(BUILD_BENCHMARK)
     ulight_configure(bench_asciiquack)
 endif()
 
+# If we are the top level project, do install and summary logic
+if ("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
 # ── Install ───────────────────────────────────────────────────────────────────
 include(GNUInstallDirs)
 install(TARGETS asciiquack RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -317,3 +336,4 @@ message(STATUS "  Highlighting : ${_ulight_enabled}")
 message(STATUS "  Tests        : ${BUILD_TESTS}")
 message(STATUS "  Benchmark    : ${BUILD_BENCHMARK}")
 message(STATUS "")
+endif()
