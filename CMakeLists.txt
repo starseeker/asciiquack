@@ -67,7 +67,7 @@ endif()
 # The only runtime dependency is the C standard library (memchr, memcmp, etc.).
 
 set(AQSCANNER_SRCS
-    "${CMAKE_SOURCE_DIR}/block_scanner_hand.c"
+   "${CMAKE_CURRENT_SOURCE_DIR}/block_scanner_hand.c"
 )
 function(aqscanner_configure target)
     target_sources(${target} PRIVATE ${AQSCANNER_SRCS})
@@ -104,7 +104,7 @@ set(_ulight_enabled FALSE)
 
 if(USE_ULIGHT)
     # First check that the vendor/ulight source tree is actually present.
-    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vendor/ulight/src/ulight.cpp")
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/ulight/src/ulight.cpp")
         message(STATUS "  Syntax highlighting (ulight): DISABLED "
                        "(vendor/ulight/ sources not found in source tree)")
     else()
@@ -113,7 +113,7 @@ if(USE_ULIGHT)
         # vendor/ulight_cxx23_check.cpp exercises all of them.
         try_compile(_ulight_cxx23_ok
             "${CMAKE_BINARY_DIR}/ulight_cxx23_check"
-            SOURCES "${CMAKE_SOURCE_DIR}/vendor/ulight_cxx23_check.cpp"
+            SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/vendor/ulight_cxx23_check.cpp"
             CXX_STANDARD 23
             CXX_STANDARD_REQUIRED ON
             CXX_EXTENSIONS OFF
@@ -164,7 +164,7 @@ if(_ulight_enabled)
     # PUBLIC so that consumers automatically get the include path and
     # therefore can #include "ulight/ulight.h" without extra setup.
     target_include_directories(ulight_vendor PUBLIC
-        "${CMAKE_SOURCE_DIR}/vendor/ulight/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/ulight/include"
     )
 
     # Silence all warnings from the vendored C++23 code; they are not our
@@ -209,8 +209,8 @@ set(_pdf_enabled FALSE)
 set(_noto_fonts_dir "")
 
 if(USE_PDF)
-    if(EXISTS "${CMAKE_SOURCE_DIR}/vendor/minipdf.cpp" AND
-       EXISTS "${CMAKE_SOURCE_DIR}/vendor/lodepng.cpp")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/minipdf.cpp" AND
+       EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/lodepng.cpp")
         set(_pdf_enabled TRUE)
     else()
         message(STATUS "  PDF output : DISABLED "
@@ -220,8 +220,8 @@ endif()
 
 if(_pdf_enabled)
     # Check for bundled Noto fonts; define the dir macro only when present.
-    if(EXISTS "${CMAKE_SOURCE_DIR}/fonts")
-        set(_noto_fonts_dir "${CMAKE_SOURCE_DIR}/fonts")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
+        set(_noto_fonts_dir "${CMAKE_CURRENT_SOURCE_DIR}/fonts")
         message(STATUS "  PDF output : enabled (minipdf + lodepng)")
         message(STATUS "  Noto fonts : ${_noto_fonts_dir}")
     else()
@@ -235,8 +235,8 @@ endif()
 function(pdf_configure target)
     if(_pdf_enabled)
         target_sources(${target} PRIVATE
-            "${CMAKE_SOURCE_DIR}/vendor/lodepng.cpp"
-            "${CMAKE_SOURCE_DIR}/vendor/minipdf.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/lodepng.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/minipdf.cpp"
         )
         target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_PDF)
         if(_noto_fonts_dir)
@@ -252,26 +252,29 @@ add_executable(asciiquack
     asciiquack.cpp
     parser.cpp
 )
-target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
-target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
+target_include_directories(asciiquack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(asciiquack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor)
 aqscanner_configure(asciiquack)
 pdf_configure(asciiquack)
 ulight_configure(asciiquack)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build the C++ test suite" ON)
+if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_asciiquack.cpp)
+   set(BUILD_TESTS OFF)
+endif()
 
-if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test_asciiquack.cpp)
+if(BUILD_TESTS)
     enable_testing()
 
     add_executable(asciiquack_tests
         test_asciiquack.cpp
         parser.cpp
     )
-    target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR})
-	 target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
+    target_include_directories(asciiquack_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	 target_include_directories(asciiquack_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor)
 	 target_compile_definitions(asciiquack_tests PRIVATE
-        CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        CMAKE_CURRENT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     aqscanner_configure(asciiquack_tests)
     pdf_configure(asciiquack_tests)
@@ -282,14 +285,17 @@ endif()
 
 # ── Benchmark ─────────────────────────────────────────────────────────────────
 option(BUILD_BENCHMARK "Build the C++ benchmark program" ON)
+if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark)
+   set(BUILD_BENCHMARK OFF)
+endif()
 
-if(BUILD_BENCHMARK AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark)
+if(BUILD_BENCHMARK)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
         parser.cpp
     )
-    target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
-	 target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
+    target_include_directories(bench_asciiquack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(bench_asciiquack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor)
     aqscanner_configure(bench_asciiquack)
     pdf_configure(bench_asciiquack)
     ulight_configure(bench_asciiquack)
