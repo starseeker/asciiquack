@@ -103,22 +103,28 @@ option(USE_ULIGHT "Enable syntax highlighting via embedded µlight (requires C++
 set(_ulight_enabled FALSE)
 
 if(USE_ULIGHT)
-    # Probe for the specific C++23 features ulight uses: std::expected,
-    # char8_t, consteval, if !consteval, and static lambdas.
-    # vendor/ulight_cxx23_check.cpp exercises all of them.
-    try_compile(_ulight_cxx23_ok
-        "${CMAKE_BINARY_DIR}/ulight_cxx23_check"
-        SOURCES "${CMAKE_SOURCE_DIR}/vendor/ulight_cxx23_check.cpp"
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-    )
-
-    if(_ulight_cxx23_ok)
-        set(_ulight_enabled TRUE)
-    else()
+    # First check that the vendor/ulight source tree is actually present.
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vendor/ulight/src/ulight.cpp")
         message(STATUS "  Syntax highlighting (ulight): DISABLED "
-                       "(compiler does not support required C++23 features)")
+                       "(vendor/ulight/ sources not found in source tree)")
+    else()
+        # Probe for the specific C++23 features ulight uses: std::expected,
+        # char8_t, consteval, if !consteval, and static lambdas.
+        # vendor/ulight_cxx23_check.cpp exercises all of them.
+        try_compile(_ulight_cxx23_ok
+            "${CMAKE_BINARY_DIR}/ulight_cxx23_check"
+            SOURCES "${CMAKE_SOURCE_DIR}/vendor/ulight_cxx23_check.cpp"
+            CXX_STANDARD 23
+            CXX_STANDARD_REQUIRED ON
+            CXX_EXTENSIONS OFF
+        )
+
+        if(_ulight_cxx23_ok)
+            set(_ulight_enabled TRUE)
+        else()
+            message(STATUS "  Syntax highlighting (ulight): DISABLED "
+                           "(compiler does not support required C++23 features)")
+        endif()
     endif()
 endif()
 
@@ -182,22 +188,74 @@ function(ulight_configure target)
     endif()
 endfunction()
 
-# ── Image support via bundled lodepng (PNG decoding) ─────────────────────────
-message(STATUS "  Image support: using bundled lodepng; PNG and JPEG images enabled in PDF output")
+# ── PDF output via embedded minipdf + lodepng ─────────────────────────────────
+# PDF output requires vendor/minipdf.cpp (PDF generation) and
+# vendor/lodepng.cpp (PNG decoding for image embedding).  Both files, plus the
+# bundled Noto fonts in fonts/, are optional: when they are absent the build
+# succeeds without PDF support, which is the "minimalist" configuration
+# suitable for embedding asciiquack in another project without pulling in the
+# full repository.
+#
+# Options:
+#   USE_PDF=ON  (default)
+#       Enable PDF output if vendor/minipdf.cpp and vendor/lodepng.cpp are
+#       present in the source tree.
+#   USE_PDF=OFF
+#       Disable PDF output unconditionally.
+
+option(USE_PDF "Enable PDF output via embedded minipdf (requires vendor/minipdf.cpp and vendor/lodepng.cpp)" ON)
+
+set(_pdf_enabled FALSE)
+set(_noto_fonts_dir "")
+
+if(USE_PDF)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/vendor/minipdf.cpp" AND
+       EXISTS "${CMAKE_SOURCE_DIR}/vendor/lodepng.cpp")
+        set(_pdf_enabled TRUE)
+    else()
+        message(STATUS "  PDF output : DISABLED "
+                       "(vendor/minipdf.cpp or vendor/lodepng.cpp not found in source tree)")
+    endif()
+endif()
+
+if(_pdf_enabled)
+    # Check for bundled Noto fonts; define the dir macro only when present.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/fonts")
+        set(_noto_fonts_dir "${CMAKE_SOURCE_DIR}/fonts")
+        message(STATUS "  PDF output : enabled (minipdf + lodepng)")
+        message(STATUS "  Noto fonts : ${_noto_fonts_dir}")
+    else()
+        message(STATUS "  PDF output : enabled (minipdf + lodepng; no bundled Noto fonts)")
+    endif()
+else()
+    message(STATUS "  PDF output : disabled")
+endif()
+
+# Helper: attach PDF sources and compile definitions to a target.
+function(pdf_configure target)
+    if(_pdf_enabled)
+        target_sources(${target} PRIVATE
+            "${CMAKE_SOURCE_DIR}/vendor/lodepng.cpp"
+            "${CMAKE_SOURCE_DIR}/vendor/minipdf.cpp"
+        )
+        target_compile_definitions(${target} PRIVATE ASCIIQUACK_USE_PDF)
+        if(_noto_fonts_dir)
+            target_compile_definitions(${target} PRIVATE
+                ASCIIQUACK_NOTO_FONTS_DIR="${_noto_fonts_dir}"
+            )
+        endif()
+    endif()
+endfunction()
 
 # ── Main executable ───────────────────────────────────────────────────────────
 add_executable(asciiquack
     asciiquack.cpp
     parser.cpp
-    vendor/lodepng.cpp
-    vendor/minipdf.cpp
 )
 target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
 target_include_directories(asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
-target_compile_definitions(asciiquack PRIVATE
-    ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
-)
 aqscanner_configure(asciiquack)
+pdf_configure(asciiquack)
 ulight_configure(asciiquack)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -209,16 +267,14 @@ if(BUILD_TESTS)
     add_executable(asciiquack_tests
         test_asciiquack.cpp
         parser.cpp
-        vendor/lodepng.cpp
-        vendor/minipdf.cpp
     )
     target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR})
 	 target_include_directories(asciiquack_tests PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
 	 target_compile_definitions(asciiquack_tests PRIVATE
-        ASCIIQUACK_NOTO_FONTS_DIR="${CMAKE_SOURCE_DIR}/fonts"
         CMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
     aqscanner_configure(asciiquack_tests)
+    pdf_configure(asciiquack_tests)
     ulight_configure(asciiquack_tests)
 
     add_test(NAME asciiquack_tests COMMAND asciiquack_tests)
@@ -231,12 +287,11 @@ if(BUILD_BENCHMARK)
     add_executable(bench_asciiquack
         benchmark/bench_asciiquack.cpp
         parser.cpp
-        vendor/lodepng.cpp
-        vendor/minipdf.cpp
     )
     target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR})
 	 target_include_directories(bench_asciiquack PRIVATE ${CMAKE_SOURCE_DIR}/vendor)
     aqscanner_configure(bench_asciiquack)
+    pdf_configure(bench_asciiquack)
     ulight_configure(bench_asciiquack)
 endif()
 
@@ -251,6 +306,8 @@ message(STATUS "  Build type   : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard : C++${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler     : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  -O3 enabled  : ${COMPILER_SUPPORTS_O3}")
+message(STATUS "  PDF output   : ${_pdf_enabled}")
+message(STATUS "  Highlighting : ${_ulight_enabled}")
 message(STATUS "  Tests        : ${BUILD_TESTS}")
 message(STATUS "  Benchmark    : ${BUILD_BENCHMARK}")
 message(STATUS "")
