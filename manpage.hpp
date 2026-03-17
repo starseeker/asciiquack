@@ -993,8 +993,6 @@ private:
         };
 
         const bool has_header = !table.head_rows().empty();
-        const bool has_body   = !table.body_rows().empty();
-        const bool has_footer = !table.foot_rows().empty();
 
         // Asciidoctor man page backend uses a single format line for all rows
         // (no .T& switch between header and body).  This produces consistent

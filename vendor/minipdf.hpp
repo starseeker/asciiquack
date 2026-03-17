@@ -502,10 +502,7 @@ public:
                     float r = 0.0f, float g = 0.0f, float b = 0.0f) {
         if (text.empty()) { return; }
         content_ += "BT\n";
-        if (r != 0.0f || g != 0.0f || b != 0.0f) {
-            // non-black text fill colour
-            content_ += fmtf(r) + " " + fmtf(g) + " " + fmtf(b) + " rg\n";
-        }
+        content_ += fmtf(r) + " " + fmtf(g) + " " + fmtf(b) + " rg\n";
         content_ += "/" + std::string(font_res_name(style)) + " "
                   + fmtf(size) + " Tf\n";
         content_ += "1 0 0 1 " + fmtf(x) + " " + fmtf(y) + " Tm\n";

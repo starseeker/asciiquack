@@ -4410,7 +4410,7 @@ static void test_pdf_fontset_noto_metrics_differ_from_helvetica() {
     EXPECT(noto_w > 0.0f);
 
     float helv_w = minipdf::char_width_units('W', minipdf::FontStyle::Regular);
-    EXPECT(noto_w != helv_w);
+    EXPECT(noto_w < helv_w || noto_w > helv_w);
 
     // Vertical metrics should be sane.
     EXPECT(noto->ascent_1000()  > 0.0f);
@@ -5281,7 +5281,7 @@ static void test_minipdf_png_from_file_loads() {
 
     // Use the demo PNG that ships with the repository
     const std::string png_path =
-        std::string(CMAKE_SOURCE_DIR) + "/examples/asciiquack.png";
+        std::string(CMAKE_CURRENT_SOURCE_DIR) + "/examples/asciiquack.png";
     {
         std::ifstream probe(png_path, std::ios::binary);
         if (!probe) {

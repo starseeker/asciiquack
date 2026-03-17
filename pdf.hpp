@@ -1217,8 +1217,9 @@ public:
                                float avail_w) -> int {
             if (spans.empty()) { return 1; }
             float space_w  = tw(" ", minipdf::FontStyle::Regular, BODY_SIZE);
-            int   lines    = 1;
-            float line_w   = 0.0f;
+            int   lines      = 1;
+            float line_w     = 0.0f;
+            bool  line_empty = true;
             auto no_sp = [](const std::string& t) -> bool {
                 if (t.empty()) { return false; }
                 const char c = t[0];
@@ -1230,12 +1231,13 @@ public:
                 while (std::getline(ss, tok, ' ')) {
                     if (tok.empty()) { continue; }
                     float ww  = tw(tok, sp.style, sp.size);
-                    float gap = (line_w == 0.0f || no_sp(tok)) ? 0.0f : space_w;
+                    float gap = (line_empty || no_sp(tok)) ? 0.0f : space_w;
                     float need = line_w + gap + ww;
                     if (need > avail_w && line_w > 0.0f && !no_sp(tok)) {
-                        ++lines; line_w = ww;
+                        ++lines; line_w = ww; line_empty = false;
                     } else {
-                        line_w = (line_w == 0.0f) ? ww : need;
+                        line_w = line_empty ? ww : need;
+                        line_empty = false;
                     }
                 }
             }
