@@ -23,6 +23,7 @@
 #    pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #    pragma GCC diagnostic ignored "-Wshadow"
 #    pragma GCC diagnostic ignored "-Wunused-function"
+#    pragma GCC diagnostic ignored "-Wfloat-equal"
 #endif
 
 #define STRUETYPE_IMPLEMENTATION

@@ -194,9 +194,9 @@ std::optional<ListMatch> match_list_item(const std::string& line) {
 
     switch (r.type) {
         case AQ_BT_LIST_UNORD:
-            return ListMatch{ListType::Unordered, cap(0), cap(1)};
+            return ListMatch{ListType::Unordered, cap(0), cap(1), {}};
         case AQ_BT_LIST_ORD:
-            return ListMatch{ListType::Ordered, cap(0), cap(1)};
+            return ListMatch{ListType::Ordered, cap(0), cap(1), {}};
         case AQ_BT_LIST_DESCRIPT: {
             // caps[0]=term (trimmed), caps[1]=separator, caps[2]=body
             std::string term = cap(0);
@@ -204,7 +204,7 @@ std::optional<ListMatch> match_list_item(const std::string& line) {
             return ListMatch{ListType::Description, cap(1), cap(2), std::move(term)};
         }
         case AQ_BT_LIST_CALLOUT:
-            return ListMatch{ListType::Callout, cap(0), cap(1)};
+            return ListMatch{ListType::Callout, cap(0), cap(1), {}};
         default:
             return std::nullopt;
     }
@@ -403,12 +403,10 @@ bool evaluate_ifeval(const std::string& expr, const Document& doc) {
     strip_quotes(lhs_raw);
     strip_quotes(rhs_raw);
 
-    // Try numeric comparison first
+    // Try numeric comparison first (for ordering operators only)
     try {
         double lhs_n = std::stod(lhs_raw);
         double rhs_n = std::stod(rhs_raw);
-        if (op == "==") return lhs_n == rhs_n;
-        if (op == "!=") return lhs_n != rhs_n;
         if (op == "<")  return lhs_n <  rhs_n;
         if (op == "<=") return lhs_n <= rhs_n;
         if (op == ">")  return lhs_n >  rhs_n;
