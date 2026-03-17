@@ -213,7 +213,7 @@ if(USE_PDF)
        EXISTS "${CMAKE_SOURCE_DIR}/vendor/lodepng.cpp")
         set(_pdf_enabled TRUE)
     else()
-        message(STATUS "  PDF output: DISABLED "
+        message(STATUS "  PDF output : DISABLED "
                        "(vendor/minipdf.cpp or vendor/lodepng.cpp not found in source tree)")
     endif()
 endif()
@@ -222,13 +222,13 @@ if(_pdf_enabled)
     # Check for bundled Noto fonts; define the dir macro only when present.
     if(EXISTS "${CMAKE_SOURCE_DIR}/fonts")
         set(_noto_fonts_dir "${CMAKE_SOURCE_DIR}/fonts")
-        message(STATUS "  PDF output  : enabled (minipdf + lodepng)")
-        message(STATUS "  Noto fonts  : ${_noto_fonts_dir}")
+        message(STATUS "  PDF output : enabled (minipdf + lodepng)")
+        message(STATUS "  Noto fonts : ${_noto_fonts_dir}")
     else()
-        message(STATUS "  PDF output  : enabled (minipdf + lodepng; no bundled Noto fonts)")
+        message(STATUS "  PDF output : enabled (minipdf + lodepng; no bundled Noto fonts)")
     endif()
 else()
-    message(STATUS "  PDF output  : disabled")
+    message(STATUS "  PDF output : disabled")
 endif()
 
 # Helper: attach PDF sources and compile definitions to a target.
