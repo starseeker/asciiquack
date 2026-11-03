@@ -2349,7 +2349,7 @@ std::shared_ptr<Table> Parser::parse_table(
     while (reader.has_more_lines()) {
         auto ln = reader.read_line();
         if (!ln) { break; }
-        if (*ln == "|===" || *ln == ",===") { break; }
+        if (ln->rfind("|===", 0) == 0 || ln->rfind(",===", 0) == 0) { break; }
         raw_lines.push_back(*ln);
     }
 
